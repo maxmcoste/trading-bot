@@ -225,6 +225,33 @@ class DBLogger:
             ).fetchall()
             return [dict(r) for r in rows]
 
+    def get_open_trades(self, symbol: str | None = None) -> list[dict]:
+        """Return all executed BUY trades that are not yet closed.
+
+        If `symbol` is provided, filters to that symbol only. Unlike
+        get_trades(limit=1), this returns ALL open positions for the symbol
+        so older unclosed trades after a restart are still discovered.
+        """
+        try:
+            with self._conn() as conn:
+                if symbol:
+                    rows = conn.execute(
+                        "SELECT * FROM trades WHERE action='BUY' AND executed=1 "
+                        "AND (closed_at IS NULL OR closed_at='') AND symbol=? "
+                        "ORDER BY id DESC",
+                        (symbol,),
+                    ).fetchall()
+                else:
+                    rows = conn.execute(
+                        "SELECT * FROM trades WHERE action='BUY' AND executed=1 "
+                        "AND (closed_at IS NULL OR closed_at='') "
+                        "ORDER BY id DESC",
+                    ).fetchall()
+                return [dict(r) for r in rows]
+        except Exception as e:
+            logger.error(f"get_open_trades failed: {e}")
+            return []
+
     def get_trade(self, trade_id: int) -> dict | None:
         with self._conn() as conn:
             row = conn.execute("SELECT * FROM trades WHERE id=?", (trade_id,)).fetchone()

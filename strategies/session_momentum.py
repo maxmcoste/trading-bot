@@ -33,11 +33,15 @@ class SessionMomentumStrategy(BaseStrategy):
     config_key = "STRATEGY_SESSION_MOMENTUM_ENABLED"
 
     def analyze(self, data: dict) -> StrategySignal:
-        momentum_pct = data.get("momentum_pct", 0.0)
         volume_ratio = data.get("volume_ratio", 1.0)
         current_time = data.get("current_time")
 
         session = get_current_session(current_time)
+        # USA session uses 30-min momentum; Asia/Europe use the 1h momentum
+        if session == "usa":
+            momentum_pct = data.get("momentum_pct_30min", data.get("momentum_pct", 0.0))
+        else:
+            momentum_pct = data.get("momentum_pct", 0.0)
         reasons = [f"Session: {session}"]
 
         # Dead session: always neutral

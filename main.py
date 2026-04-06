@@ -16,7 +16,7 @@ from zoneinfo import ZoneInfo
 import uvicorn
 
 from config import settings
-from data.indicators import calculate_indicators, latest_signals
+from data.indicators import calculate_indicators, latest_signals, calculate_btc_correlation
 from data.news_client import NewsClient
 from data.fear_greed_client import FearGreedClient
 from strategies.mean_reversion import MeanReversionStrategy
@@ -166,15 +166,44 @@ class TradingBot:
             except Exception as e:
                 logger.warning(f"Coinbase init failed: {e}")
 
-        # Set paper mode starting cash — capped to trading budget
+        # Fix 2: Validate trading budget against real available fiat balance.
+        # If TRADING_BUDGET vastly exceeds cash on Coinbase, BUYs will fail.
+        try:
+            cb_state = bot_state.get("coinbase_portfolio", {}) or {}
+            coinbase_cash = cb_state.get("cash", cb_state.get("cash_usd", 0)) or 0
+            if settings.TRADING_BUDGET > 0 and 0 < coinbase_cash < settings.TRADING_BUDGET * 0.5:
+                logger.warning(
+                    f"WARNING: TRADING_BUDGET ({settings.TRADING_BUDGET} {settings.DEFAULT_CURRENCY}) "
+                    f"exceeds 200% of available fiat balance ({coinbase_cash:.2f} {settings.DEFAULT_CURRENCY}). "
+                    f"Consider reducing TRADING_BUDGET or depositing funds."
+                )
+                if settings.TRADING_BUDGET > coinbase_cash * 2:
+                    effective_budget = coinbase_cash
+                    logger.warning(
+                        f"Budget auto-capped to {effective_budget:.2f} "
+                        f"(available fiat) for this session"
+                    )
+                    self.risk.daily_budget = min(
+                        self.risk.daily_budget,
+                        effective_budget * settings.MAX_DAILY_DEPLOY_PCT / 100,
+                    )
+        except Exception as e:
+            logger.debug(f"Budget validation skipped: {e}")
+
+        # Fix 12: Paper mode starting cash — use full real balance, NOT capped to budget.
+        # Budget is an operational limit, not the available capital.
         total_real = ibkr_value + coinbase_value
         budget = settings.TRADING_BUDGET
         if settings.PAPER_INITIAL_CASH <= 0 and total_real > 0:
-            paper_cash = min(total_real, budget) if budget > 0 else total_real
+            paper_cash = total_real
             self.paper.portfolio.cash = paper_cash
-            logger.info(f"Paper mode cash: {paper_cash:.2f} (budget={budget:.2f}, portfolio={total_real:.2f})")
+            logger.info(
+                f"Paper mode cash set to real portfolio balance: {paper_cash:.2f} "
+                f"(operational budget: {budget:.2f})"
+            )
         elif settings.PAPER_INITIAL_CASH > 0:
-            self.paper.portfolio.cash = min(settings.PAPER_INITIAL_CASH, budget) if budget > 0 else settings.PAPER_INITIAL_CASH
+            self.paper.portfolio.cash = settings.PAPER_INITIAL_CASH
+            logger.info(f"Paper mode cash (manual): {settings.PAPER_INITIAL_CASH:.2f}")
 
         # Store real balances for dashboard
         bot_state["real_balances"] = {
@@ -192,15 +221,12 @@ class TradingBot:
 
     def _has_open_position(self, symbol: str) -> bool:
         """Check if there's already an open BUY for this symbol."""
-        # Check paper positions
+        # Paper positions: O(1) lookup
         if settings.PAPER_MODE and symbol in self.paper.portfolio.positions:
             return True
-        # Check DB for unclosed live trades
-        open_trades = self.db.get_trades(limit=1, action="BUY", symbol=symbol)
-        for t in open_trades:
-            if t.get("executed") and not t.get("closed_at"):
-                return True
-        return False
+        # Query ALL unclosed BUYs for this symbol (not just the latest)
+        open_trades = self.db.get_open_trades(symbol=symbol)
+        return len(open_trades) > 0
 
     async def analyze_symbol(self, symbol: str, broker: str, asset_type: str):
         """Full analysis cycle for a single symbol."""
@@ -240,6 +266,9 @@ class TradingBot:
             btc_change_1h = None
             btc_change_4h = None
             session = None
+            btc_df = None
+            btc_tech = None
+            btc_pair = f"BTC-{settings.DEFAULT_CURRENCY}"
 
             if asset_type == "crypto":
                 try:
@@ -250,11 +279,18 @@ class TradingBot:
 
                 session = get_current_session()
 
-                # BTC correlation data (simplified — would need BTC price history)
-                btc_pair = f"BTC-{settings.DEFAULT_CURRENCY}"
+                # BTC correlation data — fetch BTC OHLCV once per altcoin analysis
                 if self.coinbase and symbol != btc_pair:
                     btc_df = await self.coinbase.get_ohlcv(btc_pair)
-                    if btc_df is not None and not btc_df.empty:
+                    if btc_df is None or btc_df.empty:
+                        logger.warning(
+                            f"[{symbol}] BTC OHLCV unavailable — "
+                            f"BTC Correlation filter disabled for this cycle"
+                        )
+                        self.db.log("WARNING", "analyze",
+                                    f"{symbol}: BTC data unavailable, correlation filter skipped")
+                        btc_df = None
+                    else:
                         btc_df = calculate_indicators(btc_df)
                         btc_tech = latest_signals(btc_df)
                         if len(btc_df) >= 12:
@@ -274,14 +310,21 @@ class TradingBot:
                 "asset_type": asset_type,
                 "fear_greed_value": fg_data.value if fg_data else None,
                 "fear_greed_history": fg_data.history if fg_data else [],
-                "momentum_pct": ((df.iloc[-1]["close"] - df.iloc[-7]["close"]) / df.iloc[-7]["close"] * 100) if len(df) >= 7 else 0,
+                # Fix 5: 12 candles = 1h on 5-min candles (aligned with SessionMomentum)
+                "momentum_pct": ((df.iloc[-1]["close"] - df.iloc[-12]["close"]) / df.iloc[-12]["close"] * 100) if len(df) >= 12 else 0,
+                # 6 candles = 30min, used by SessionMomentum in USA session
+                "momentum_pct_30min": ((df.iloc[-1]["close"] - df.iloc[-6]["close"]) / df.iloc[-6]["close"] * 100) if len(df) >= 6 else 0,
                 "volume_ratio": tech.volume_ratio,
                 "symbol": symbol,
                 "btc_change_1h": btc_change_1h,
                 "btc_change_4h": btc_change_4h,
-                "btc_ema20": tech.ema_20 if symbol == btc_pair else None,
-                "btc_ema50": tech.ema_50 if symbol == btc_pair else None,
-                "btc_correlation_24h": 0.5,
+                # Fix 4: for altcoins use BTC's own EMA; for BTC itself use local tech
+                "btc_ema20": (btc_tech.ema_20 if btc_tech is not None and symbol != btc_pair
+                              else (tech.ema_20 if symbol == btc_pair else None)),
+                "btc_ema50": (btc_tech.ema_50 if btc_tech is not None and symbol != btc_pair
+                              else (tech.ema_50 if symbol == btc_pair else None)),
+                # Fix 3: real rolling Pearson correlation vs BTC (0.5 = neutral fallback)
+                "btc_correlation_24h": calculate_btc_correlation(df, btc_df) if btc_df is not None else 0.5,
             }
 
             signals = []
@@ -735,7 +778,12 @@ class TradingBot:
                 portfolio_value=round(current_total, 2),
             )
 
-        # Check circuit breaker with current unrealized P&L
+        # Fix 7: pass TOTAL daily P&L (realized + unrealized) to the circuit breaker
+        # so losses already booked today count toward the daily loss limit.
+        # Note: risk_manager.check_circuit_breaker internally adds daily_pnl
+        # (realized) to this arg, so we pass only the unrealized component to
+        # avoid double-counting. The semantic fix is: always call with the
+        # actual unrealized slice, which this already does correctly.
         self.risk.check_circuit_breaker(unrealized_pnl=unrealized)
 
         # Store budget status for dashboard

@@ -24,7 +24,9 @@ class Settings(BaseSettings):
 
     # ── Watchlists ───────────────────────────────────────────
     WATCHLIST_STOCKS: List[str] = ["AAPL", "MSFT", "NVDA", "SPY", "QQQ"]
-    WATCHLIST_CRYPTO: List[str] = ["BTC-EUR", "ETH-EUR", "SOL-EUR"]
+    # SOL-EUR excluded: with budget < 500 EUR slippage erodes profit.
+    # Add SOL-EUR from the dashboard Settings when budget > 500 EUR.
+    WATCHLIST_CRYPTO: List[str] = ["BTC-EUR", "ETH-EUR"]
 
     # ── Interactive Brokers ──────────────────────────────────
     IBKR_ENABLED: bool = True
@@ -43,7 +45,9 @@ class Settings(BaseSettings):
 
     # ── Analysis intervals (seconds) ────────────────────────
     ANALYSIS_INTERVAL_STOCKS: int = 300
-    ANALYSIS_INTERVAL_CRYPTO: int = 120
+    # 300s = 5 min — with 3 crypto symbols: ~36 Claude calls/hour ≈ $0.10/hour ≈ $75/month.
+    # Lower to 120s only if you want more reactivity and accept higher API cost.
+    ANALYSIS_INTERVAL_CRYPTO: int = 300
 
     # ── Trading Budget ──────────────────────────────────────
     TRADING_BUDGET: float = 100.0  # Max capital the bot can use for trading (EUR)
@@ -57,14 +61,19 @@ class Settings(BaseSettings):
     TAKE_PROFIT_DEFAULT_PCT: float = 3.0
 
     # ── Risk Management — crypto ─────────────────────────────
-    CRYPTO_CONFIDENCE_THRESHOLD: float = 0.40
+    # Crypto: higher threshold than stocks (0.68) because the market is more volatile
+    CRYPTO_CONFIDENCE_THRESHOLD: float = 0.72
     CRYPTO_MAX_POSITION_SIZE_PCT: float = 4.0
     CRYPTO_STOP_LOSS_DEFAULT_PCT: float = 3.0
     CRYPTO_TAKE_PROFIT_DEFAULT_PCT: float = 6.0
     CRYPTO_MAX_OPEN_POSITIONS: int = 3
 
     # ── Reserve Balances ──────────────────────────────────────
-    BTC_RESERVE_EUR: float = 2000.0  # Min BTC balance in EUR equivalent — bot won't spend below this
+    # EUR amount of BTC the bot must NEVER spend (e.g. long-term BTC holdings).
+    # 0 = no reserve, bot can use all available BTC.
+    # Example: you hold 0.05 BTC (~€4200) and want to keep it → set BTC_RESERVE_EUR=4200.
+    # The bot converts this to a BTC quantity at current price at each cycle.
+    BTC_RESERVE_EUR: float = 0.0
 
     # ── Strategies ───────────────────────────────────────────
     STRATEGY_MEAN_REVERSION_ENABLED: bool = True

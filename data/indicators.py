@@ -98,6 +98,38 @@ def latest_signals(df: pd.DataFrame) -> TechnicalSignals:
     )
 
 
+def calculate_btc_correlation(asset_df, btc_df, periods: int = 24) -> float:
+    """Rolling Pearson correlation between asset and BTC percentage returns.
+
+    Args:
+        asset_df: OHLCV DataFrame of the asset.
+        btc_df:   OHLCV DataFrame of BTC.
+        periods:  number of candles (default 24 = ~2h on 5min candles).
+
+    Returns:
+        Float in [-1.0, +1.0], or 0.5 (neutral) if data is insufficient.
+    """
+    try:
+        if asset_df is None or btc_df is None:
+            return 0.5
+        if len(asset_df) < periods or len(btc_df) < periods:
+            return 0.5
+
+        asset_returns = asset_df["close"].pct_change().dropna().tail(periods)
+        btc_returns = btc_df["close"].pct_change().dropna().tail(periods)
+
+        min_len = min(len(asset_returns), len(btc_returns))
+        if min_len < 5:
+            return 0.5
+
+        corr = asset_returns.tail(min_len).corr(btc_returns.tail(min_len))
+        if pd.isna(corr):
+            return 0.5
+        return round(float(corr), 3)
+    except Exception:
+        return 0.5
+
+
 if __name__ == "__main__":
     import numpy as np
 
