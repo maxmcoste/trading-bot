@@ -1,0 +1,247 @@
+{% extends "base.html" %}
+{% block title %}Portfolio — Trading Bot{% endblock %}
+{% block page_title %}Portfolio{% endblock %}
+{% block breadcrumb %}Home / Portfolio{% endblock %}
+{% block nav_portfolio %}bg-dark-700 text-accent-500{% endblock %}
+
+{% block content %}
+<div x-data="portfolioData()" x-init="init()">
+    <!-- Total Portfolio -->
+    <div class="bg-dark-800 rounded-xl p-6 border border-gray-700 mb-6">
+        <h2 class="text-lg font-bold mb-4">Portfolio Overview</h2>
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div>
+                <p class="text-gray-400 text-sm">Total Value</p>
+                <p class="text-3xl font-bold" x-text="cs + portfolio.total_value.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2})"></p>
+            </div>
+            <div>
+                <p class="text-gray-400 text-sm">IBKR (Stocks)</p>
+                <p class="text-xl font-semibold" x-text="cs + portfolio.ibkr_value.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2})"></p>
+                <p class="text-xs text-gray-500" x-text="portfolio.ibkr_pct.toFixed(1) + '%'"></p>
+            </div>
+            <div>
+                <p class="text-gray-400 text-sm">Coinbase (Crypto)</p>
+                <p class="text-xl font-semibold" x-text="cs + portfolio.coinbase_value.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2})"></p>
+                <p class="text-xs text-gray-500" x-text="portfolio.coinbase_pct.toFixed(1) + '%'"></p>
+            </div>
+            <div>
+                <p class="text-gray-400 text-sm">Cash</p>
+                <p class="text-xl font-semibold" x-text="cs + (portfolio.cash || 0).toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2})"></p>
+            </div>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+        <!-- Donut Chart -->
+        <div class="bg-dark-800 rounded-xl p-4 border border-gray-700">
+            <h3 class="text-sm font-bold mb-3 text-gray-300">Allocation</h3>
+            <canvas id="allocationChart" height="200"></canvas>
+        </div>
+
+        <!-- P&L Chart -->
+        <div class="lg:col-span-2 bg-dark-800 rounded-xl p-4 border border-gray-700">
+            <h3 class="text-sm font-bold mb-3 text-gray-300">Portfolio Value (30 days)</h3>
+            <canvas id="pnlHistoryChart" height="160"></canvas>
+        </div>
+    </div>
+
+    <!-- Holdings Table -->
+    <div class="bg-dark-800 rounded-xl p-4 border border-gray-700 mb-6">
+        <h3 class="text-sm font-bold mb-3 text-gray-300">Holdings</h3>
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead class="text-gray-400 text-xs uppercase border-b border-gray-700">
+                    <tr>
+                        <th class="py-2 text-left">Asset</th>
+                        <th class="py-2 text-right">Balance</th>
+                        <th class="py-2 text-right">Price</th>
+                        <th class="py-2 text-right">Value</th>
+                        <th class="py-2 text-right">% of Portfolio</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <template x-for="h in holdings" :key="h.currency">
+                        <tr class="border-b border-gray-800 hover:bg-dark-700">
+                            <td class="py-2 font-bold" x-text="h.currency"></td>
+                            <td class="py-2 text-right text-gray-300" x-text="h.type === 'fiat' ? h.balance.toFixed(2) : h.balance.toFixed(6)"></td>
+                            <td class="py-2 text-right text-gray-400" x-text="h.price ? cs + h.price.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2}) : '-'"></td>
+                            <td class="py-2 text-right" x-text="cs + h.value.toFixed(2)"></td>
+                            <td class="py-2 text-right text-gray-400" x-text="(portfolio.total_value > 0 ? (h.value / portfolio.total_value * 100).toFixed(1) + '%' : '-')"></td>
+                        </tr>
+                    </template>
+                </tbody>
+            </table>
+            <p x-show="holdings.length === 0" class="text-center text-gray-500 py-4">No holdings data</p>
+        </div>
+    </div>
+
+    <!-- Bot Open Positions Table -->
+    <div class="bg-dark-800 rounded-xl p-4 border border-gray-700">
+        <h3 class="text-sm font-bold mb-3 text-gray-300">Bot Open Positions</h3>
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead class="text-gray-400 text-xs uppercase border-b border-gray-700">
+                    <tr>
+                        <th class="py-2 text-left">Symbol</th>
+                        <th class="py-2 text-left">Broker</th>
+                        <th class="py-2 text-right">Entry</th>
+                        <th class="py-2 text-right">Current</th>
+                        <th class="py-2 text-right">Qty</th>
+                        <th class="py-2 text-right">P&L</th>
+                        <th class="py-2 text-right">P&L %</th>
+                        <th class="py-2 text-right">SL / TP</th>
+                        <th class="py-2 text-left">Opened</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <template x-for="p in positions" :key="p.symbol">
+                        <tr class="border-b border-gray-800 hover:bg-dark-700">
+                            <td class="py-2 font-bold" x-text="p.symbol"></td>
+                            <td class="py-2" x-text="p.broker"></td>
+                            <td class="py-2 text-right" x-text="cs + p.entry_price.toFixed(2)"></td>
+                            <td class="py-2 text-right" x-text="p.current_price ? cs + p.current_price.toFixed(2) : '-'"></td>
+                            <td class="py-2 text-right text-gray-300" x-text="p.quantity.toFixed(6)"></td>
+                            <td class="py-2 text-right" :class="p.pnl_usd >= 0 ? 'text-green-400' : 'text-red-400'"
+                                x-text="(p.pnl_usd >= 0 ? '+' : '') + cs + p.pnl_usd.toFixed(2)"></td>
+                            <td class="py-2 text-right" :class="p.pnl_pct >= 0 ? 'text-green-400' : 'text-red-400'"
+                                x-text="(p.pnl_pct >= 0 ? '+' : '') + p.pnl_pct.toFixed(2) + '%'"></td>
+                            <td class="py-2 text-right text-gray-400" x-text="'-' + p.stop_loss_pct + '% / +' + p.take_profit_pct + '%'"></td>
+                            <td class="py-2 text-gray-400 text-xs" x-text="p.opened_at"></td>
+                        </tr>
+                    </template>
+                </tbody>
+            </table>
+            <p x-show="positions.length === 0" class="text-center text-gray-500 py-4">No open bot positions</p>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function portfolioData() {
+    return {
+        portfolio: { total_value: 0, ibkr_value: 0, coinbase_value: 0, ibkr_pct: 0, coinbase_pct: 0, cash: 0 },
+        cs: '\u20ac',
+        holdings: [],
+        positions: [],
+        allocationChart: null,
+        pnlChart: null,
+
+        async init() {
+            const [portfolioResp, pnlResp] = await Promise.allSettled([
+                fetch('/api/portfolio').then(r => r.json()),
+                fetch('/api/portfolio/pnl?days=30').then(r => r.json()),
+            ]);
+
+            if (portfolioResp.status === 'fulfilled') {
+                const d = portfolioResp.value;
+                this.portfolio = d.summary || this.portfolio;
+                this.cs = d.currency_symbol || '\u20ac';
+                this.holdings = d.holdings || [];
+                this.positions = d.positions || [];
+                this.buildAllocationChart();
+            }
+
+            if (pnlResp.status === 'fulfilled') {
+                this.buildPnlChart(pnlResp.value);
+            }
+
+            // Refresh every 5 seconds
+            setInterval(async () => {
+                try {
+                    const r = await fetch('/api/portfolio');
+                    const d = await r.json();
+                    this.portfolio = d.summary || this.portfolio;
+                    this.holdings = d.holdings || [];
+                    this.positions = d.positions || [];
+                } catch(e) {}
+            }, 5000);
+        },
+
+        buildAllocationChart() {
+            const ctx = document.getElementById('allocationChart');
+            if (!ctx) return;
+
+            // Build from holdings
+            const labels = [];
+            const values = [];
+            const colors = ['#6366f1', '#22c55e', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899', '#14b8a6'];
+
+            for (const h of this.holdings) {
+                if (h.value > 0.01) {
+                    labels.push(h.currency);
+                    values.push(h.value);
+                }
+            }
+
+            if (values.length === 0) return;
+
+            if (this.allocationChart) this.allocationChart.destroy();
+            this.allocationChart = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        data: values,
+                        backgroundColor: colors.slice(0, values.length),
+                        borderWidth: 0,
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: { color: '#9ca3af', font: { size: 11 } }
+                        }
+                    }
+                }
+            });
+        },
+
+        buildPnlChart(pnlData) {
+            const ctx = document.getElementById('pnlHistoryChart');
+            if (!ctx || !pnlData || pnlData.length === 0) return;
+
+            const labels = pnlData.map(p => p.timestamp ? p.timestamp.slice(5, 16) : '');
+            const values = pnlData.map(p => p.value || 0);
+
+            if (this.pnlChart) this.pnlChart.destroy();
+            this.pnlChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Portfolio Value',
+                        data: values,
+                        borderColor: '#6366f1',
+                        backgroundColor: 'rgba(99,102,241,0.1)',
+                        fill: true,
+                        tension: 0.3,
+                        pointRadius: 0,
+                        borderWidth: 2,
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        x: {
+                            ticks: { color: '#6b7280', maxTicksLimit: 10, font: { size: 10 } },
+                            grid: { color: 'rgba(55,65,81,0.3)' },
+                        },
+                        y: {
+                            ticks: { color: '#6b7280', font: { size: 10 } },
+                            grid: { color: 'rgba(55,65,81,0.3)' },
+                        }
+                    },
+                    plugins: {
+                        legend: { display: false }
+                    }
+                }
+            });
+        },
+    }
+}
+</script>
+{% endblock %}

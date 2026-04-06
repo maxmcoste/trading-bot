@@ -1,0 +1,247 @@
+{% extends "base.html" %}
+{% block title %}Logs — Trading Bot{% endblock %}
+{% block page_title %}Logs{% endblock %}
+{% block breadcrumb %}Home / Logs{% endblock %}
+{% block nav_logs %}bg-dark-700 text-accent-500{% endblock %}
+
+{% block content %}
+<div x-data="logsData()" x-init="fetchLogs()">
+    <!-- Filters -->
+    <div class="bg-dark-800 rounded-xl p-4 border border-gray-700 mb-6 flex flex-wrap gap-4 items-end">
+        <div>
+            <label class="text-xs text-gray-400 block mb-1">Level</label>
+            <select x-model="filters.level" class="bg-dark-700 border border-gray-600 rounded px-3 py-1.5 text-sm">
+                <option value="">All</option>
+                <option value="INFO">INFO</option>
+                <option value="WARNING">WARNING</option>
+                <option value="ERROR">ERROR</option>
+            </select>
+        </div>
+        <div>
+            <label class="text-xs text-gray-400 block mb-1">Component</label>
+            <select x-model="filters.component" class="bg-dark-700 border border-gray-600 rounded px-3 py-1.5 text-sm">
+                <option value="">All</option>
+                <template x-for="c in components" :key="c">
+                    <option :value="c" x-text="c"></option>
+                </template>
+            </select>
+        </div>
+        <div>
+            <label class="text-xs text-gray-400 block mb-1">Search</label>
+            <input type="text" x-model="filters.search" placeholder="Filter messages..."
+                class="bg-dark-700 border border-gray-600 rounded px-3 py-1.5 text-sm w-48">
+        </div>
+        <button @click="page=1; fetchLogs()" class="px-4 py-1.5 bg-accent-600 hover:bg-accent-500 rounded text-sm font-bold">Filter</button>
+        <button @click="filters={level:'',component:'',search:''}; page=1; fetchLogs()"
+            class="px-4 py-1.5 bg-dark-700 hover:bg-dark-600 border border-gray-600 rounded text-sm">Clear</button>
+        <div class="ml-auto flex items-center gap-3">
+            <label class="flex items-center gap-2 text-sm text-gray-400 cursor-pointer">
+                <input type="checkbox" x-model="autoRefresh" class="accent-accent-500">
+                Auto-refresh
+            </label>
+            <div class="flex items-end gap-1">
+                <div>
+                    <label class="text-xs text-gray-400 block mb-1">Purge older than (days)</label>
+                    <input type="number" min="0" x-model.number="purgeDays"
+                        class="bg-dark-700 border border-gray-600 rounded px-2 py-1.5 text-sm w-20">
+                </div>
+                <button @click="purgeLogs()"
+                    class="px-3 py-1.5 bg-red-700 hover:bg-red-600 rounded text-sm font-bold">
+                    Purge Logs
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Stats bar -->
+    <div class="flex gap-3 mb-4">
+        <span class="px-3 py-1 rounded-full text-xs font-bold bg-blue-900 text-blue-300 cursor-pointer"
+              :class="filters.level==='INFO' && 'ring-2 ring-blue-400'"
+              @click="filters.level = filters.level==='INFO' ? '' : 'INFO'; page=1; fetchLogs()"
+              x-text="'INFO ' + counts.INFO"></span>
+        <span class="px-3 py-1 rounded-full text-xs font-bold bg-yellow-900 text-yellow-300 cursor-pointer"
+              :class="filters.level==='WARNING' && 'ring-2 ring-yellow-400'"
+              @click="filters.level = filters.level==='WARNING' ? '' : 'WARNING'; page=1; fetchLogs()"
+              x-text="'WARNING ' + counts.WARNING"></span>
+        <span class="px-3 py-1 rounded-full text-xs font-bold bg-red-900 text-red-300 cursor-pointer"
+              :class="filters.level==='ERROR' && 'ring-2 ring-red-400'"
+              @click="filters.level = filters.level==='ERROR' ? '' : 'ERROR'; page=1; fetchLogs()"
+              x-text="'ERROR ' + counts.ERROR"></span>
+    </div>
+
+    <!-- Log Table -->
+    <div class="bg-dark-800 rounded-xl border border-gray-700 overflow-hidden">
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm font-mono">
+                <thead class="text-gray-400 text-xs uppercase bg-dark-700">
+                    <tr>
+                        <th class="py-3 px-3 text-left w-8">#</th>
+                        <th class="py-3 px-3 text-left w-44">Timestamp</th>
+                        <th class="py-3 px-3 text-center w-24">Level</th>
+                        <th class="py-3 px-3 text-left w-32">Component</th>
+                        <th class="py-3 px-3 text-left">Message</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <template x-for="log in filteredLogs" :key="log.id">
+                        <tr class="border-b border-gray-800 hover:bg-dark-700 cursor-pointer"
+                            @click="expanded === log.id ? expanded = null : expanded = log.id"
+                            :class="{
+                                'bg-red-950/30': log.level==='ERROR',
+                                'bg-yellow-950/20': log.level==='WARNING'
+                            }">
+                            <td class="py-2 px-3 text-gray-600 text-xs" x-text="log.id"></td>
+                            <td class="py-2 px-3 text-gray-400 whitespace-nowrap text-xs" x-text="log.timestamp"></td>
+                            <td class="py-2 px-3 text-center">
+                                <span class="px-2 py-0.5 rounded text-xs font-bold"
+                                    :class="{
+                                        'bg-blue-800 text-blue-200': log.level==='INFO',
+                                        'bg-yellow-800 text-yellow-200': log.level==='WARNING',
+                                        'bg-red-800 text-red-200': log.level==='ERROR'
+                                    }"
+                                    x-text="log.level"></span>
+                            </td>
+                            <td class="py-2 px-3">
+                                <span class="px-2 py-0.5 rounded text-xs bg-dark-600 text-gray-300"
+                                    x-text="log.component"></span>
+                            </td>
+                            <td class="py-2 px-3 text-gray-200 text-xs" x-text="log.message"></td>
+                        </tr>
+                        <!-- Expanded detail -->
+                        <tr x-show="expanded === log.id" x-transition>
+                            <td colspan="5" class="bg-dark-700 p-4">
+                                <div class="grid grid-cols-2 gap-4 text-sm">
+                                    <div>
+                                        <p class="text-gray-500 text-xs mb-1">Full Message</p>
+                                        <p class="text-gray-200 whitespace-pre-wrap break-all" x-text="log.message"></p>
+                                    </div>
+                                    <div class="space-y-2">
+                                        <div>
+                                            <p class="text-gray-500 text-xs mb-1">Log ID</p>
+                                            <p class="text-gray-300" x-text="log.id"></p>
+                                        </div>
+                                        <div>
+                                            <p class="text-gray-500 text-xs mb-1">Timestamp</p>
+                                            <p class="text-gray-300" x-text="log.timestamp"></p>
+                                        </div>
+                                        <div>
+                                            <p class="text-gray-500 text-xs mb-1">Component</p>
+                                            <p class="text-gray-300" x-text="log.component"></p>
+                                        </div>
+                                        <div class="flex gap-2 mt-3">
+                                            <button @click.stop="filters.component=log.component; page=1; fetchLogs()"
+                                                class="px-2 py-1 bg-dark-600 hover:bg-dark-500 rounded text-xs">
+                                                Filter by component
+                                            </button>
+                                            <button @click.stop="filters.level=log.level; page=1; fetchLogs()"
+                                                class="px-2 py-1 bg-dark-600 hover:bg-dark-500 rounded text-xs">
+                                                Filter by level
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </td>
+                        </tr>
+                    </template>
+                </tbody>
+            </table>
+        </div>
+        <!-- Pagination -->
+        <div class="flex justify-between items-center p-4 text-sm text-gray-400">
+            <span x-text="'Showing ' + filteredLogs.length + ' logs'"></span>
+            <div class="flex gap-2">
+                <button @click="page = Math.max(1, page-1); fetchLogs()"
+                    :disabled="page <= 1" class="px-3 py-1 bg-dark-700 rounded disabled:opacity-30">Prev</button>
+                <span x-text="'Page ' + page"></span>
+                <button @click="page++; fetchLogs()"
+                    :disabled="logs.length < perPage" class="px-3 py-1 bg-dark-700 rounded disabled:opacity-30">Next</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function logsData() {
+    return {
+        logs: [],
+        page: 1,
+        perPage: 50,
+        expanded: null,
+        autoRefresh: true,
+        purgeDays: 30,
+        components: [],
+        counts: { INFO: 0, WARNING: 0, ERROR: 0 },
+        filters: { level: '', component: '', search: '' },
+        async purgeLogs() {
+            const days = parseInt(this.purgeDays);
+            if (isNaN(days) || days < 0) {
+                alert('Please enter a valid number of days (0 or greater)');
+                return;
+            }
+            const msg = days === 0
+                ? 'DELETE ALL LOGS? This cannot be undone.'
+                : `Delete all logs older than ${days} days? This cannot be undone.`;
+            if (!confirm(msg)) return;
+            try {
+                const r = await fetch('/api/logs/purge', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({days}),
+                });
+                const d = await r.json();
+                if (d.error) { alert('Error: ' + d.error); return; }
+                const fileMsg = (d.files_truncated && d.files_truncated.length)
+                    ? `\nTruncated files: ${d.files_truncated.join(', ')}` : '';
+                alert(`Purged ${d.deleted} logs older than ${d.days} days${fileMsg}`);
+                this.components = [];
+                this.page = 1;
+                this.fetchLogs();
+            } catch(e) { alert('Request failed: ' + e.message); }
+        },
+        get filteredLogs() {
+            if (!this.filters.search) return this.logs;
+            const q = this.filters.search.toLowerCase();
+            return this.logs.filter(l => l.message.toLowerCase().includes(q));
+        },
+        parseUrlFilters() {
+            const p = new URLSearchParams(window.location.search);
+            if (p.get('level')) this.filters.level = p.get('level');
+            if (p.get('component')) this.filters.component = p.get('component');
+        },
+        buildQuery() {
+            const p = new URLSearchParams();
+            if (this.filters.level) p.set('level', this.filters.level);
+            if (this.filters.component) p.set('component', this.filters.component);
+            p.set('page', this.page);
+            p.set('limit', this.perPage);
+            return p.toString();
+        },
+        async fetchLogs() {
+            this.parseUrlFilters();
+            try {
+                const r = await fetch('/api/logs?' + this.buildQuery());
+                this.logs = await r.json();
+
+                // Fetch all logs briefly to get component list and counts
+                if (this.components.length === 0) {
+                    const all = await fetch('/api/logs?limit=500').then(r => r.json());
+                    const comps = new Set();
+                    const c = { INFO: 0, WARNING: 0, ERROR: 0 };
+                    all.forEach(l => {
+                        comps.add(l.component);
+                        if (c[l.level] !== undefined) c[l.level]++;
+                    });
+                    this.components = [...comps].sort();
+                    this.counts = c;
+                }
+            } catch(e) { console.error(e); }
+            if (this.autoRefresh) {
+                setTimeout(() => this.fetchLogs(), 5000);
+            }
+        }
+    }
+}
+</script>
+{% endblock %}

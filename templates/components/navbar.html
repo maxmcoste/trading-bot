@@ -1,0 +1,74 @@
+<aside class="w-60 bg-dark-800 border-r border-gray-700 fixed h-full flex flex-col" x-data="{ botStatus: 'running' }">
+    <div class="p-4 border-b border-gray-700">
+        <h2 class="text-xl font-bold text-accent-500">TradingBot</h2>
+        <p class="text-xs text-gray-400">AI-Powered Micro-Investments</p>
+    </div>
+
+    <nav class="flex-1 p-4 space-y-1">
+        <a href="/" class="flex items-center px-3 py-2 rounded-lg hover:bg-dark-700 {% block nav_dashboard %}{% endblock %}">
+            <span class="mr-3">&#x1f4ca;</span> Dashboard
+        </a>
+        <a href="/portfolio" class="flex items-center px-3 py-2 rounded-lg hover:bg-dark-700 {% block nav_portfolio %}{% endblock %}">
+            <span class="mr-3">&#x1f4b0;</span> Portfolio
+        </a>
+        <a href="/trades" class="flex items-center px-3 py-2 rounded-lg hover:bg-dark-700 {% block nav_trades %}{% endblock %}">
+            <span class="mr-3">&#x1f4c8;</span> Trade History
+        </a>
+        <a href="/feeds" class="flex items-center px-3 py-2 rounded-lg hover:bg-dark-700 {% block nav_feeds %}{% endblock %}">
+            <span class="mr-3">&#x1f4e1;</span> Feeds
+        </a>
+        <a href="/logs" class="flex items-center px-3 py-2 rounded-lg hover:bg-dark-700 {% block nav_logs %}{% endblock %}">
+            <span class="mr-3">&#x1f4dc;</span> Logs
+        </a>
+        <a href="/strategies" class="flex items-center px-3 py-2 rounded-lg hover:bg-dark-700 {% block nav_strategies %}{% endblock %}">
+            <span class="mr-3">&#x2699;</span> Strategies
+        </a>
+        <a href="/settings" class="flex items-center px-3 py-2 rounded-lg hover:bg-dark-700 {% block nav_settings %}{% endblock %}">
+            <span class="mr-3">&#x1f527;</span> Settings
+        </a>
+    </nav>
+
+    <div class="p-4 border-t border-gray-700 space-y-2 text-sm" x-data="sidebarStatus()" x-init="fetchStatus()">
+        <div class="flex items-center gap-2">
+            <span class="w-2.5 h-2.5 rounded-full" :class="running ? 'bg-green-500 pulse-green' : 'bg-red-500'"></span>
+            <span>BOT: <span x-text="running ? 'TRADING' : 'PAUSED'" class="font-semibold"></span></span>
+        </div>
+        <div class="flex gap-2">
+            <span class="px-2 py-0.5 rounded text-xs font-bold" :class="paper ? 'bg-yellow-600' : 'bg-red-600'" x-text="paper ? 'PAPER' : 'LIVE'"></span>
+            <template x-if="ibkr"><span class="px-2 py-0.5 rounded text-xs bg-blue-600 font-bold">IBKR</span></template>
+            <template x-if="coinbase"><span class="px-2 py-0.5 rounded text-xs bg-purple-600 font-bold">COINBASE</span></template>
+        </div>
+        <button x-show="running" @click="if(confirm('Pause trading? The bot will stop analyzing and executing trades.')) toggleBot()"
+            class="w-full mt-2 px-3 py-1.5 bg-red-700 hover:bg-red-600 rounded text-xs font-bold">
+            Pause Trading
+        </button>
+        <button x-show="!running" @click="toggleBot()"
+            class="w-full mt-2 px-3 py-1.5 bg-green-700 hover:bg-green-600 rounded text-xs font-bold">
+            Start Trading
+        </button>
+    </div>
+</aside>
+
+<script>
+function sidebarStatus() {
+    return {
+        running: true, paper: true, ibkr: true, coinbase: true,
+        async fetchStatus() {
+            try {
+                const r = await fetch('/api/status');
+                const d = await r.json();
+                this.running = d.running;
+                this.paper = d.paper_mode;
+                this.ibkr = d.ibkr_enabled;
+                this.coinbase = d.coinbase_enabled;
+            } catch(e) {}
+            setTimeout(() => this.fetchStatus(), 10000);
+        },
+        async toggleBot() {
+            const endpoint = this.running ? '/api/bot/stop' : '/api/bot/start';
+            await fetch(endpoint, {method:'POST'});
+            this.running = !this.running;
+        }
+    }
+}
+</script>

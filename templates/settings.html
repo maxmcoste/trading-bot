@@ -1,0 +1,281 @@
+{% extends "base.html" %}
+{% block title %}Settings — Trading Bot{% endblock %}
+{% block page_title %}Settings{% endblock %}
+{% block breadcrumb %}Home / Settings{% endblock %}
+{% block nav_settings %}bg-dark-700 text-accent-500{% endblock %}
+
+{% block content %}
+<div x-data="settingsData()" x-init="init()">
+
+    <!-- Broker Section -->
+    <div class="bg-dark-800 rounded-xl border border-gray-700 mb-6" x-data="{open:true}">
+        <button @click="open=!open" class="w-full flex justify-between items-center p-5">
+            <h3 class="font-bold">Broker Configuration</h3>
+            <span x-text="open ? '&#x25B2;' : '&#x25BC;'" class="text-gray-400"></span>
+        </button>
+        <div x-show="open" x-transition class="px-5 pb-5 space-y-4">
+            <div class="flex gap-4">
+                <label class="flex items-center gap-2 cursor-pointer">
+                    <input type="radio" value="ibkr" x-model="cfg.BROKER_MODE" class="accent-accent-500"> IBKR Only
+                </label>
+                <label class="flex items-center gap-2 cursor-pointer">
+                    <input type="radio" value="coinbase" x-model="cfg.BROKER_MODE" class="accent-accent-500"> Coinbase Only
+                </label>
+                <label class="flex items-center gap-2 cursor-pointer">
+                    <input type="radio" value="both" x-model="cfg.BROKER_MODE" class="accent-accent-500"> Both
+                </label>
+            </div>
+            <p class="text-xs text-yellow-400">Changing broker mode requires a bot restart.</p>
+
+            <div x-show="cfg.BROKER_MODE === 'ibkr' || cfg.BROKER_MODE === 'both'" class="grid grid-cols-3 gap-4">
+                <div>
+                    <label class="text-xs text-gray-400">IBKR Host</label>
+                    <input x-model="cfg.IBKR_HOST" class="w-full bg-dark-700 border border-gray-600 rounded px-3 py-2 text-sm">
+                </div>
+                <div>
+                    <label class="text-xs text-gray-400">Port <span class="text-gray-500">(7497=paper, 7496=live)</span></label>
+                    <input type="number" x-model.number="cfg.IBKR_PORT" class="w-full bg-dark-700 border border-gray-600 rounded px-3 py-2 text-sm">
+                </div>
+                <div>
+                    <label class="text-xs text-gray-400">Client ID</label>
+                    <input type="number" x-model.number="cfg.IBKR_CLIENT_ID" class="w-full bg-dark-700 border border-gray-600 rounded px-3 py-2 text-sm">
+                </div>
+            </div>
+
+            <div x-show="cfg.BROKER_MODE === 'coinbase' || cfg.BROKER_MODE === 'both'" class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="text-xs text-gray-400">Coinbase API Key</label>
+                    <input x-model="cfg.COINBASE_API_KEY" class="w-full bg-dark-700 border border-gray-600 rounded px-3 py-2 text-sm">
+                </div>
+                <div>
+                    <label class="text-xs text-gray-400">Coinbase API Secret</label>
+                    <input type="password" x-model="cfg.COINBASE_API_SECRET" class="w-full bg-dark-700 border border-gray-600 rounded px-3 py-2 text-sm">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Risk Management Section -->
+    <div class="bg-dark-800 rounded-xl border border-gray-700 mb-6" x-data="{open:true}">
+        <button @click="open=!open" class="w-full flex justify-between items-center p-5">
+            <h3 class="font-bold">Risk Management</h3>
+            <span x-text="open ? '&#x25B2;' : '&#x25BC;'" class="text-gray-400"></span>
+        </button>
+        <div x-show="open" x-transition class="px-5 pb-5">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <!-- Stocks -->
+                <div>
+                    <h4 class="font-semibold mb-3 text-sm text-blue-400">Stocks</h4>
+                    <div class="space-y-3">
+                        <div>
+                            <label class="text-xs text-gray-400 flex justify-between"><span>Confidence Threshold</span><span x-text="cfg.CONFIDENCE_THRESHOLD"></span></label>
+                            <input type="range" min="0.5" max="0.95" step="0.01" x-model.number="cfg.CONFIDENCE_THRESHOLD" class="w-full">
+                        </div>
+                        <div>
+                            <label class="text-xs text-gray-400 flex justify-between"><span>Max Position Size %</span><span x-text="cfg.MAX_POSITION_SIZE_PCT+'%'"></span></label>
+                            <input type="range" min="1" max="20" step="0.5" x-model.number="cfg.MAX_POSITION_SIZE_PCT" class="w-full">
+                        </div>
+                        <div>
+                            <label class="text-xs text-gray-400 flex justify-between"><span>Stop Loss %</span><span x-text="cfg.STOP_LOSS_DEFAULT_PCT+'%'"></span></label>
+                            <input type="range" min="0.5" max="5" step="0.1" x-model.number="cfg.STOP_LOSS_DEFAULT_PCT" class="w-full">
+                        </div>
+                        <div>
+                            <label class="text-xs text-gray-400 flex justify-between"><span>Take Profit %</span><span x-text="cfg.TAKE_PROFIT_DEFAULT_PCT+'%'"></span></label>
+                            <input type="range" min="1" max="10" step="0.5" x-model.number="cfg.TAKE_PROFIT_DEFAULT_PCT" class="w-full">
+                        </div>
+                        <div>
+                            <label class="text-xs text-gray-400">Max Open Positions</label>
+                            <input type="number" x-model.number="cfg.MAX_OPEN_POSITIONS" class="w-full bg-dark-700 border border-gray-600 rounded px-3 py-1.5 text-sm">
+                        </div>
+                        <button @click="applySLTP('stock')"
+                            class="w-full mt-1 px-3 py-1.5 bg-dark-700 hover:bg-dark-600 border border-gray-600 rounded text-xs text-gray-300">
+                            Apply SL/TP to all open stock positions
+                        </button>
+                    </div>
+                </div>
+                <!-- Crypto -->
+                <div>
+                    <h4 class="font-semibold mb-3 text-sm text-purple-400">Crypto</h4>
+                    <div class="space-y-3">
+                        <div>
+                            <label class="text-xs text-gray-400 flex justify-between"><span>Confidence Threshold</span><span x-text="cfg.CRYPTO_CONFIDENCE_THRESHOLD"></span></label>
+                            <input type="range" min="0.5" max="0.95" step="0.01" x-model.number="cfg.CRYPTO_CONFIDENCE_THRESHOLD" class="w-full">
+                        </div>
+                        <div>
+                            <label class="text-xs text-gray-400 flex justify-between"><span>Max Position Size %</span><span x-text="cfg.CRYPTO_MAX_POSITION_SIZE_PCT+'%'"></span></label>
+                            <input type="range" min="1" max="10" step="0.5" x-model.number="cfg.CRYPTO_MAX_POSITION_SIZE_PCT" class="w-full">
+                        </div>
+                        <div>
+                            <label class="text-xs text-gray-400 flex justify-between"><span>Stop Loss %</span><span x-text="cfg.CRYPTO_STOP_LOSS_DEFAULT_PCT+'%'"></span></label>
+                            <input type="range" min="1" max="8" step="0.5" x-model.number="cfg.CRYPTO_STOP_LOSS_DEFAULT_PCT" class="w-full">
+                        </div>
+                        <div>
+                            <label class="text-xs text-gray-400 flex justify-between"><span>Take Profit %</span><span x-text="cfg.CRYPTO_TAKE_PROFIT_DEFAULT_PCT+'%'"></span></label>
+                            <input type="range" min="2" max="15" step="0.5" x-model.number="cfg.CRYPTO_TAKE_PROFIT_DEFAULT_PCT" class="w-full">
+                        </div>
+                        <div>
+                            <label class="text-xs text-gray-400">Max Open Positions</label>
+                            <input type="number" x-model.number="cfg.CRYPTO_MAX_OPEN_POSITIONS" class="w-full bg-dark-700 border border-gray-600 rounded px-3 py-1.5 text-sm">
+                        </div>
+                        <div class="mt-2 p-3 border border-yellow-600/40 rounded">
+                            <label class="text-xs text-gray-400 flex justify-between">
+                                <span>BTC Reserve (EUR equivalent)</span>
+                                <span class="text-yellow-400 font-bold" x-text="'€' + cfg.BTC_RESERVE_EUR"></span>
+                            </label>
+                            <input type="range" min="0" max="10000" step="100" x-model.number="cfg.BTC_RESERVE_EUR" class="w-full">
+                            <p class="text-xs text-gray-500 mt-0.5">Minimum BTC balance the bot will never spend. Cross-pair trades (e.g. SOL-BTC) are blocked if BTC would drop below this.</p>
+                        </div>
+                        <button @click="applySLTP('crypto')"
+                            class="w-full mt-1 px-3 py-1.5 bg-dark-700 hover:bg-dark-600 border border-gray-600 rounded text-xs text-gray-300">
+                            Apply SL/TP to all open crypto positions
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="mt-4 p-3 border border-accent-600/40 rounded space-y-3">
+                <h4 class="text-sm font-semibold text-accent-400">Daily Budget & Loss Limit</h4>
+                <div>
+                    <label class="text-xs text-gray-400 flex justify-between">
+                        <span>Daily Trading Budget</span>
+                        <span class="text-accent-400 font-bold" x-text="'€' + cfg.TRADING_BUDGET"></span>
+                    </label>
+                    <input type="range" min="10" max="5000" step="10" x-model.number="cfg.TRADING_BUDGET" class="w-full">
+                    <p class="text-xs text-gray-500 mt-0.5">Max capital the bot can deploy in new trades per day (€10 – €5,000)</p>
+                </div>
+                <div>
+                    <label class="text-xs text-gray-400 flex justify-between">
+                        <span>Max Daily Loss %</span>
+                        <span x-text="cfg.MAX_DAILY_LOSS_PCT + '%'"></span>
+                    </label>
+                    <input type="range" min="1" max="10" step="0.5" x-model.number="cfg.MAX_DAILY_LOSS_PCT" class="w-full">
+                    <p class="text-xs text-gray-500 mt-0.5">
+                        Circuit breaker: halt trading if losses exceed this % of daily budget.
+                        <span class="text-yellow-400" x-text="'Max loss: €' + (cfg.TRADING_BUDGET * cfg.MAX_DAILY_LOSS_PCT / 100).toFixed(2) + '/day'"></span>
+                    </p>
+                </div>
+            </div>
+
+            <div class="mt-4 flex items-center gap-3">
+                <label class="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" x-model="cfg.PAPER_MODE" class="accent-accent-500">
+                    <span class="text-sm">Paper Mode</span>
+                </label>
+                <span x-show="!cfg.PAPER_MODE" class="text-xs text-red-400 font-bold">WARNING: Disabling Paper Mode will execute REAL orders!</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Notifications Section -->
+    <div class="bg-dark-800 rounded-xl border border-gray-700 mb-6" x-data="{open:false}">
+        <button @click="open=!open" class="w-full flex justify-between items-center p-5">
+            <h3 class="font-bold">Notifications</h3>
+            <span x-text="open ? '&#x25B2;' : '&#x25BC;'" class="text-gray-400"></span>
+        </button>
+        <div x-show="open" x-transition class="px-5 pb-5 space-y-3">
+            <div>
+                <label class="text-xs text-gray-400">Email</label>
+                <input type="email" x-model="cfg.NOTIFY_EMAIL" class="w-full bg-dark-700 border border-gray-600 rounded px-3 py-2 text-sm">
+            </div>
+            <div class="flex gap-6">
+                <label class="flex items-center gap-2 text-sm"><input type="checkbox" x-model="cfg.NOTIFY_ON_TRADE" class="accent-accent-500"> On Trade</label>
+                <label class="flex items-center gap-2 text-sm"><input type="checkbox" x-model="cfg.NOTIFY_ON_ERROR" class="accent-accent-500"> On Error</label>
+                <label class="flex items-center gap-2 text-sm"><input type="checkbox" x-model="cfg.NOTIFY_ON_DAILY_SUMMARY" class="accent-accent-500"> Daily Summary</label>
+            </div>
+        </div>
+    </div>
+
+    <!-- Watchlist Section -->
+    <div class="bg-dark-800 rounded-xl border border-gray-700 mb-6" x-data="{open:false}">
+        <button @click="open=!open" class="w-full flex justify-between items-center p-5">
+            <h3 class="font-bold">Watchlists</h3>
+            <span x-text="open ? '&#x25B2;' : '&#x25BC;'" class="text-gray-400"></span>
+        </button>
+        <div x-show="open" x-transition class="px-5 pb-5">
+            <div class="grid grid-cols-2 gap-6">
+                <div>
+                    <h4 class="text-sm font-semibold text-blue-400 mb-2">Stocks</h4>
+                    <template x-for="(sym, i) in cfg.WATCHLIST_STOCKS" :key="'s'+i">
+                        <div class="flex items-center gap-2 mb-1">
+                            <span class="bg-dark-700 px-3 py-1 rounded text-sm flex-1" x-text="sym"></span>
+                            <button @click="cfg.WATCHLIST_STOCKS.splice(i,1)" class="text-red-400 text-xs hover:text-red-300">Remove</button>
+                        </div>
+                    </template>
+                    <div class="flex gap-2 mt-2">
+                        <input x-ref="newStock" placeholder="AAPL" class="bg-dark-700 border border-gray-600 rounded px-3 py-1 text-sm flex-1">
+                        <button @click="const v=$refs.newStock.value.toUpperCase(); if(v) cfg.WATCHLIST_STOCKS.push(v); $refs.newStock.value=''"
+                            class="px-3 py-1 bg-accent-600 rounded text-xs">Add</button>
+                    </div>
+                </div>
+                <div>
+                    <h4 class="text-sm font-semibold text-purple-400 mb-2">Crypto</h4>
+                    <template x-for="(sym, i) in cfg.WATCHLIST_CRYPTO" :key="'c'+i">
+                        <div class="flex items-center gap-2 mb-1">
+                            <span class="bg-dark-700 px-3 py-1 rounded text-sm flex-1" x-text="sym"></span>
+                            <button @click="cfg.WATCHLIST_CRYPTO.splice(i,1)" class="text-red-400 text-xs hover:text-red-300">Remove</button>
+                        </div>
+                    </template>
+                    <div class="flex gap-2 mt-2">
+                        <input x-ref="newCrypto" placeholder="BTC-EUR" class="bg-dark-700 border border-gray-600 rounded px-3 py-1 text-sm flex-1">
+                        <button @click="const v=$refs.newCrypto.value.toUpperCase(); if(v) cfg.WATCHLIST_CRYPTO.push(v); $refs.newCrypto.value=''"
+                            class="px-3 py-1 bg-accent-600 rounded text-xs">Add</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Save Button -->
+    <div class="flex justify-end">
+        <button @click="saveSettings()" class="px-6 py-3 bg-accent-600 hover:bg-accent-500 rounded-lg font-bold">
+            Save All Settings
+        </button>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function settingsData() {
+    return {
+        cfg: {},
+        async init() {
+            try {
+                const r = await fetch('/api/settings');
+                this.cfg = await r.json();
+            } catch(e) {}
+        },
+        async applySLTP(assetType) {
+            const sl = assetType === 'stock' ? this.cfg.STOP_LOSS_DEFAULT_PCT : this.cfg.CRYPTO_STOP_LOSS_DEFAULT_PCT;
+            const tp = assetType === 'stock' ? this.cfg.TAKE_PROFIT_DEFAULT_PCT : this.cfg.CRYPTO_TAKE_PROFIT_DEFAULT_PCT;
+            if (!confirm(`Apply SL=${sl}% / TP=${tp}% to ALL open ${assetType} positions?`)) return;
+            // Save settings first so the API uses the latest values
+            await fetch('/api/settings', {
+                method: 'POST',
+                headers: {'Content-Type':'application/json'},
+                body: JSON.stringify(this.cfg),
+            });
+            const r = await fetch('/api/trades/apply-sl-tp', {
+                method: 'POST',
+                headers: {'Content-Type':'application/json'},
+                body: JSON.stringify({asset_type: assetType}),
+            });
+            const d = await r.json();
+            alert(`Updated ${d.updated} open ${assetType} positions:\nStop Loss: ${d.stop_loss_pct}%\nTake Profit: ${d.take_profit_pct}%`);
+        },
+        async saveSettings() {
+            const critical = ['BROKER_MODE', 'PAPER_MODE'];
+            if (!this.cfg.PAPER_MODE) {
+                if (!confirm('WARNING: Paper Mode is OFF. Real orders will be executed. Continue?')) return;
+            }
+            await fetch('/api/settings', {
+                method: 'POST',
+                headers: {'Content-Type':'application/json'},
+                body: JSON.stringify(this.cfg),
+            });
+            alert('Settings saved! Some changes may require a bot restart.');
+        }
+    }
+}
+</script>
+{% endblock %}

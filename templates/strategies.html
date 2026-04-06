@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+{% block title %}Strategies — Trading Bot{% endblock %}
+{% block page_title %}Strategies{% endblock %}
+{% block breadcrumb %}Home / Strategies{% endblock %}
+{% block nav_strategies %}bg-dark-700 text-accent-500{% endblock %}
+
+{% block content %}
+<div x-data="strategiesData()" x-init="init()">
+    <!-- Strategy Cards -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+        <template x-for="s in strategies" :key="s.name">
+            <div class="bg-dark-800 rounded-xl p-5 border border-gray-700">
+                <div class="flex justify-between items-start mb-3">
+                    <div class="flex items-center gap-2">
+                        <span class="w-3 h-3 rounded-full" :class="s.enabled ? 'bg-green-500' : 'bg-gray-600'"></span>
+                        <h3 class="font-bold text-lg" x-text="s.display_name"></h3>
+                    </div>
+                    <div class="flex gap-2">
+                        <button @click="toggleStrategy(s.name)"
+                            class="px-3 py-1 rounded text-xs font-bold"
+                            :class="s.enabled ? 'bg-green-700 hover:bg-green-600' : 'bg-gray-600 hover:bg-gray-500'"
+                            x-text="s.enabled ? 'ENABLED' : 'DISABLED'">
+                        </button>
+                        <a :href="s.docs_url" target="_blank"
+                            class="px-3 py-1 bg-dark-700 hover:bg-dark-800 border border-gray-600 rounded text-xs">Docs</a>
+                    </div>
+                </div>
+
+                <p class="text-sm text-gray-400 mb-3" x-text="s.description"></p>
+
+                <div class="text-xs text-gray-500 mb-3">
+                    Config: <code class="text-gray-300" x-text="s.config_key + ' = ' + s.enabled"></code>
+                </div>
+
+                <div class="grid grid-cols-3 gap-3 mb-3 text-center">
+                    <div class="bg-dark-700 rounded p-2">
+                        <p class="text-xs text-gray-400">Signals (30d)</p>
+                        <p class="font-bold" x-text="s.signal_count || 0"></p>
+                    </div>
+                    <div class="bg-dark-700 rounded p-2" title="How often the signal correctly predicted price direction">
+                        <p class="text-xs text-gray-400">Signal Accuracy</p>
+                        <p class="font-bold" :class="(s.accuracy||0) >= 50 ? 'text-green-400' : (s.accuracy||0) > 0 ? 'text-red-400' : ''"
+                           x-text="(s.accuracy || 0) + '%'"></p>
+                    </div>
+                    <div class="bg-dark-700 rounded p-2">
+                        <p class="text-xs text-gray-400">Avg Contrib</p>
+                        <p class="font-bold" :class="(s.avg_contribution||0)>=0?'text-green-400':'text-red-400'"
+                            x-text="(s.avg_contribution>=0?'+':'') + (s.avg_contribution||0).toFixed(1) + '%'"></p>
+                    </div>
+                </div>
+
+                <div class="space-y-1">
+                    <p class="text-xs text-gray-400 font-bold">Recent signals:</p>
+                    <template x-for="sig in (s.recent_signals || []).slice(0,3)" :key="sig.symbol+sig.timestamp">
+                        <div class="flex items-center gap-2 text-xs">
+                            <span class="font-semibold w-12" x-text="sig.symbol"></span>
+                            <span class="px-1.5 py-0.5 rounded"
+                                :class="{'bg-green-800':sig.signal==='bullish','bg-red-800':sig.signal==='bearish','bg-gray-700':sig.signal==='neutral'}"
+                                x-text="sig.signal"></span>
+                            <span class="text-gray-400" x-text="sig.strength.toFixed(2)"></span>
+                            <span class="text-gray-500 truncate" x-text="sig.reason"></span>
+                        </div>
+                    </template>
+                </div>
+            </div>
+        </template>
+    </div>
+
+    <!-- Weight Sliders -->
+    <div class="bg-dark-800 rounded-xl p-5 border border-gray-700">
+        <h3 class="font-bold mb-4">Multi-Signal Weights</h3>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div>
+                <label class="text-sm text-gray-400 flex justify-between">
+                    <span>Technical</span><span x-text="weights.technical.toFixed(2)"></span>
+                </label>
+                <input type="range" min="0" max="1" step="0.05" x-model.number="weights.technical"
+                    @input="normalizeWeights('technical')" class="w-full">
+            </div>
+            <div>
+                <label class="text-sm text-gray-400 flex justify-between">
+                    <span>Sentiment</span><span x-text="weights.sentiment.toFixed(2)"></span>
+                </label>
+                <input type="range" min="0" max="1" step="0.05" x-model.number="weights.sentiment"
+                    @input="normalizeWeights('sentiment')" class="w-full">
+            </div>
+            <div>
+                <label class="text-sm text-gray-400 flex justify-between">
+                    <span>Macro</span><span x-text="weights.macro.toFixed(2)"></span>
+                </label>
+                <input type="range" min="0" max="1" step="0.05" x-model.number="weights.macro"
+                    @input="normalizeWeights('macro')" class="w-full">
+            </div>
+        </div>
+        <div class="flex justify-between items-center mt-4">
+            <span class="text-sm" :class="Math.abs(weights.technical+weights.sentiment+weights.macro-1.0)<0.01 ? 'text-green-400' : 'text-red-400'"
+                x-text="'Sum: ' + (weights.technical+weights.sentiment+weights.macro).toFixed(2)"></span>
+            <button @click="saveWeights()" class="px-4 py-2 bg-accent-600 hover:bg-accent-500 rounded text-sm font-bold">Save Weights</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function strategiesData() {
+    return {
+        strategies: [],
+        weights: { technical: 0.40, sentiment: 0.30, macro: 0.30 },
+        async init() {
+            try {
+                const r = await fetch('/api/strategies');
+                const d = await r.json();
+                this.strategies = d.strategies || [];
+                if (d.weights) this.weights = d.weights;
+            } catch(e) {}
+        },
+        async toggleStrategy(name) {
+            await fetch('/api/strategies/' + name + '/toggle', {method:'POST'});
+            await this.init();
+        },
+        normalizeWeights(changed) {
+            const sum = this.weights.technical + this.weights.sentiment + this.weights.macro;
+            // Auto-adjust isn't forced — user sees the sum and corrects
+        },
+        async saveWeights() {
+            const sum = this.weights.technical + this.weights.sentiment + this.weights.macro;
+            if (Math.abs(sum - 1.0) > 0.02) { alert('Weights must sum to 1.0'); return; }
+            await fetch('/api/strategies/weights', {
+                method: 'POST',
+                headers: {'Content-Type':'application/json'},
+                body: JSON.stringify(this.weights),
+            });
+            alert('Weights saved!');
+        }
+    }
+}
+</script>
+{% endblock %}

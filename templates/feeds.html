@@ -1,0 +1,282 @@
+{% extends "base.html" %}
+
+{% block title %}Feeds — Trading Bot{% endblock %}
+{% block page_title %}Information Feeds{% endblock %}
+{% block breadcrumb %}Home / Feeds{% endblock %}
+{% block nav_feeds %}bg-dark-700 text-white{% endblock %}
+
+{% block content %}
+<div x-data="feedsPage()" x-init="init()">
+
+    <!-- Tag Filters -->
+    <div class="flex flex-wrap gap-2 mb-4">
+        <button @click="activeTag = ''" class="px-3 py-1 rounded-full text-xs font-semibold transition"
+            :class="activeTag === '' ? 'bg-accent-500 text-white' : 'bg-dark-700 text-gray-400 hover:bg-dark-800'">
+            All
+        </button>
+        <template x-for="tag in allTags" :key="tag">
+            <button @click="activeTag = tag" class="px-3 py-1 rounded-full text-xs font-semibold capitalize transition"
+                :class="activeTag === tag ? 'bg-accent-500 text-white' : 'bg-dark-700 text-gray-400 hover:bg-dark-800'"
+                x-text="tag">
+            </button>
+        </template>
+    </div>
+
+    <!-- Controls Row -->
+    <div class="flex items-center justify-between mb-4">
+        <div class="flex items-center gap-3">
+            <select x-model="activeSource" class="bg-dark-700 border border-gray-600 rounded px-3 py-1.5 text-sm text-gray-200">
+                <option value="">All Sources</option>
+                <template x-for="src in sources" :key="src.name">
+                    <option :value="src.name" x-text="src.display_name"></option>
+                </template>
+            </select>
+            <span class="text-gray-500 text-xs" x-text="`${filteredItems.length} items`"></span>
+        </div>
+        <div class="flex gap-2">
+            <button @click="showCustomModal = true"
+                class="px-3 py-1.5 bg-dark-700 hover:bg-dark-800 rounded text-xs font-semibold text-gray-300">
+                + Custom RSS
+            </button>
+            <button @click="refreshAll()" :disabled="refreshing"
+                class="px-3 py-1.5 bg-accent-600 hover:bg-accent-500 rounded text-xs font-bold text-white disabled:opacity-50">
+                <span x-show="!refreshing">Refresh All</span>
+                <span x-show="refreshing">Refreshing...</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Feed Items Grid -->
+    <div class="grid gap-3">
+        <template x-for="item in filteredItems" :key="item.title + item.source">
+            <div class="bg-dark-800 border border-gray-700 rounded-lg p-4 hover:border-gray-600 transition"
+                 :class="{'border-l-4 border-l-red-500': item.priority === 'high', 'border-l-4 border-l-yellow-500': item.priority === 'medium'}">
+                <div class="flex items-start justify-between gap-3">
+                    <div class="flex-1 min-w-0">
+                        <div class="flex items-center gap-2 mb-1">
+                            <span class="text-xs font-bold px-2 py-0.5 rounded"
+                                :class="{
+                                    'bg-blue-900 text-blue-300': item.source === 'coingecko',
+                                    'bg-orange-900 text-orange-300': item.source === 'cryptopanic',
+                                    'bg-green-900 text-green-300': item.source === 'binance_funding',
+                                    'bg-red-900 text-red-300': item.source === 'reddit',
+                                    'bg-purple-900 text-purple-300': item.source.includes('rss'),
+                                    'bg-yellow-900 text-yellow-300': item.source === 'google_trends',
+                                    'bg-cyan-900 text-cyan-300': item.source === 'glassnode',
+                                    'bg-gray-700 text-gray-300': !['coingecko','cryptopanic','binance_funding','reddit','google_trends','glassnode'].includes(item.source) && !item.source.includes('rss'),
+                                }"
+                                x-text="item.source.replace('_', ' ').replace('rss', 'RSS')">
+                            </span>
+                            <template x-for="tag in (item.tags || [])" :key="tag">
+                                <span class="text-xs text-gray-500 capitalize" x-text="'#' + tag"></span>
+                            </template>
+                        </div>
+                        <a :href="item.url" target="_blank" class="block">
+                            <h3 class="text-sm font-semibold text-gray-100 hover:text-accent-500 transition line-clamp-2"
+                                x-text="item.title"></h3>
+                        </a>
+                        <p class="text-xs text-gray-500 mt-1 line-clamp-1" x-text="item.content" x-show="item.content && item.content !== item.title"></p>
+                    </div>
+                    <div class="flex flex-col items-end gap-1 shrink-0">
+                        <!-- Sentiment badge -->
+                        <template x-if="item.sentiment_score != null">
+                            <span class="text-xs font-bold px-2 py-0.5 rounded"
+                                :class="{
+                                    'bg-green-900 text-green-400': item.sentiment_score > 0.1,
+                                    'bg-red-900 text-red-400': item.sentiment_score < -0.1,
+                                    'bg-gray-700 text-gray-400': item.sentiment_score >= -0.1 && item.sentiment_score <= 0.1,
+                                }"
+                                x-text="(item.sentiment_score > 0 ? '+' : '') + item.sentiment_score.toFixed(2)">
+                            </span>
+                        </template>
+                        <span class="text-xs text-gray-600" x-text="item.symbol" x-show="item.symbol"></span>
+                    </div>
+                </div>
+            </div>
+        </template>
+
+        <div x-show="filteredItems.length === 0" class="text-center py-12 text-gray-500">
+            <p class="text-lg mb-2">No feed items yet</p>
+            <p class="text-sm">Feed sources will populate automatically, or click "Refresh All" to fetch now.</p>
+        </div>
+    </div>
+
+    <!-- Sources Panel -->
+    <div class="mt-8">
+        <h2 class="text-lg font-bold mb-3">Feed Sources</h2>
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            <template x-for="src in sources" :key="src.name">
+                <div class="bg-dark-800 border border-gray-700 rounded-lg p-4">
+                    <div class="flex items-center justify-between mb-2">
+                        <h3 class="font-semibold text-sm" x-text="src.display_name"></h3>
+                        <button @click="toggleSource(src.name)"
+                            class="w-10 h-5 rounded-full transition-colors relative"
+                            :class="src.enabled ? 'bg-green-600' : 'bg-gray-600'">
+                            <span class="block w-4 h-4 bg-white rounded-full absolute top-0.5 transition-transform"
+                                :class="src.enabled ? 'translate-x-5' : 'translate-x-0.5'"></span>
+                        </button>
+                    </div>
+                    <p class="text-xs text-gray-500 mb-2" x-text="src.description"></p>
+                    <div class="flex flex-wrap gap-1">
+                        <template x-for="tag in (src.tags || [])" :key="tag">
+                            <span class="text-xs px-1.5 py-0.5 bg-dark-700 rounded text-gray-400 capitalize" x-text="tag"></span>
+                        </template>
+                        <span x-show="src.requires_api_key" class="text-xs px-1.5 py-0.5 bg-yellow-900 rounded text-yellow-400">API Key</span>
+                    </div>
+                    <!-- Delete button for custom RSS -->
+                    <button x-show="src.name.startsWith('custom_rss_')"
+                        @click="if(confirm('Remove this custom feed?')) removeCustomRSS(src.name)"
+                        class="mt-2 text-xs text-red-400 hover:text-red-300">
+                        Remove
+                    </button>
+                </div>
+            </template>
+        </div>
+    </div>
+
+    <!-- Custom RSS Modal -->
+    <div x-show="showCustomModal" x-cloak
+        class="fixed inset-0 bg-black/60 flex items-center justify-center z-50"
+        @click.self="showCustomModal = false">
+        <div class="bg-dark-800 border border-gray-600 rounded-xl p-6 w-full max-w-md">
+            <h3 class="text-lg font-bold mb-4">Add Custom RSS Feed</h3>
+            <div class="space-y-3">
+                <div>
+                    <label class="block text-xs text-gray-400 mb-1">Feed Name</label>
+                    <input x-model="customRSS.name" type="text" placeholder="my_feed"
+                        class="w-full bg-dark-700 border border-gray-600 rounded px-3 py-2 text-sm text-gray-200">
+                </div>
+                <div>
+                    <label class="block text-xs text-gray-400 mb-1">Display Name</label>
+                    <input x-model="customRSS.display_name" type="text" placeholder="My RSS Feed"
+                        class="w-full bg-dark-700 border border-gray-600 rounded px-3 py-2 text-sm text-gray-200">
+                </div>
+                <div>
+                    <label class="block text-xs text-gray-400 mb-1">RSS URL</label>
+                    <input x-model="customRSS.url" type="url" placeholder="https://example.com/rss"
+                        class="w-full bg-dark-700 border border-gray-600 rounded px-3 py-2 text-sm text-gray-200">
+                </div>
+                <div>
+                    <label class="block text-xs text-gray-400 mb-1">Refresh Interval (seconds)</label>
+                    <input x-model.number="customRSS.refresh_interval" type="number" value="300"
+                        class="w-full bg-dark-700 border border-gray-600 rounded px-3 py-2 text-sm text-gray-200">
+                </div>
+            </div>
+            <div class="flex justify-end gap-2 mt-5">
+                <button @click="showCustomModal = false"
+                    class="px-4 py-2 bg-dark-700 hover:bg-dark-900 rounded text-sm text-gray-300">Cancel</button>
+                <button @click="addCustomRSS()"
+                    class="px-4 py-2 bg-accent-600 hover:bg-accent-500 rounded text-sm font-bold text-white">Add Feed</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function feedsPage() {
+    return {
+        items: [],
+        sources: [],
+        activeTag: '',
+        activeSource: '',
+        refreshing: false,
+        showCustomModal: false,
+        allTags: ['news', 'sentiment', 'on-chain', 'macro', 'social', 'funding', 'trends', 'rss', 'custom'],
+        customRSS: { name: '', display_name: '', url: '', refresh_interval: 300 },
+
+        get filteredItems() {
+            let result = this.items;
+            if (this.activeTag) {
+                result = result.filter(i => (i.tags || []).includes(this.activeTag));
+            }
+            if (this.activeSource) {
+                result = result.filter(i => i.source === this.activeSource);
+            }
+            return result;
+        },
+
+        async init() {
+            await Promise.all([this.fetchItems(), this.fetchSources()]);
+            // Auto-refresh every 30s
+            setInterval(() => this.fetchItems(), 30000);
+
+            // SSE live stream
+            try {
+                const evtSource = new EventSource('/api/feeds/stream');
+                evtSource.onmessage = (e) => {
+                    try {
+                        const item = JSON.parse(e.data);
+                        // Add to top if not duplicate
+                        if (!this.items.find(i => i.title === item.title && i.source === item.source)) {
+                            this.items.unshift(item);
+                            if (this.items.length > 100) this.items.pop();
+                        }
+                    } catch(err) {}
+                };
+            } catch(e) {}
+        },
+
+        async fetchItems() {
+            try {
+                const params = new URLSearchParams();
+                if (this.activeSource) params.set('source', this.activeSource);
+                if (this.activeTag) params.set('tag', this.activeTag);
+                params.set('limit', '50');
+                const r = await fetch(`/api/feeds?${params}`);
+                this.items = await r.json();
+            } catch(e) { console.error('Feed fetch failed:', e); }
+        },
+
+        async fetchSources() {
+            try {
+                const r = await fetch('/api/feeds/sources');
+                this.sources = await r.json();
+            } catch(e) {}
+        },
+
+        async refreshAll() {
+            this.refreshing = true;
+            try {
+                await fetch('/api/feeds/refresh', { method: 'POST' });
+                await this.fetchItems();
+                await this.fetchSources();
+            } catch(e) {}
+            this.refreshing = false;
+        },
+
+        async toggleSource(name) {
+            try {
+                const r = await fetch(`/api/feeds/sources/${name}/toggle`, { method: 'POST' });
+                const d = await r.json();
+                const src = this.sources.find(s => s.name === name);
+                if (src) src.enabled = d.enabled;
+            } catch(e) {}
+        },
+
+        async addCustomRSS() {
+            if (!this.customRSS.name || !this.customRSS.url) return;
+            try {
+                await fetch('/api/feeds/custom-rss', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(this.customRSS),
+                });
+                this.showCustomModal = false;
+                this.customRSS = { name: '', display_name: '', url: '', refresh_interval: 300 };
+                await this.fetchSources();
+            } catch(e) {}
+        },
+
+        async removeCustomRSS(name) {
+            try {
+                await fetch(`/api/feeds/custom-rss/${name}`, { method: 'DELETE' });
+                await this.fetchSources();
+                await this.fetchItems();
+            } catch(e) {}
+        },
+    }
+}
+</script>
+{% endblock %}

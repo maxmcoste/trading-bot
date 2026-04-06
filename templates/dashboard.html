@@ -1,0 +1,272 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — Trading Bot{% endblock %}
+{% block page_title %}Dashboard{% endblock %}
+{% block breadcrumb %}Home / Dashboard{% endblock %}
+{% block nav_dashboard %}bg-dark-700 text-accent-500{% endblock %}
+
+{% block content %}
+<div x-data="dashboardData()" x-init="init()">
+    <!-- Stats Cards -->
+    <div class="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
+        <div class="bg-dark-800 rounded-xl p-4 border border-gray-700">
+            <p class="text-gray-400 text-xs uppercase">Portfolio</p>
+            <p class="text-2xl font-bold" x-text="cs + stats.portfolio_value.toLocaleString()">€0</p>
+            <p class="text-sm" :class="stats.daily_pnl_pct >= 0 ? 'text-green-400' : 'text-red-400'"
+               x-text="(stats.daily_pnl_pct >= 0 ? '+' : '') + stats.daily_pnl_pct.toFixed(2) + '% today'"></p>
+        </div>
+        <div class="bg-dark-800 rounded-xl p-4 border"
+             :class="bgt.paused ? 'border-red-600/60' : 'border-accent-600/40'">
+            <div class="flex items-center justify-between">
+                <p class="text-gray-400 text-xs uppercase">Daily Budget</p>
+                <span class="text-xs font-bold px-1.5 py-0.5 rounded"
+                    :class="bgt.paused ? 'bg-red-700 text-red-200' : 'bg-green-800 text-green-300'"
+                    x-text="bgt.paused ? 'PAUSED' : 'ACTIVE'"></span>
+            </div>
+            <p class="text-xl font-bold text-accent-400" x-text="cs + bgt.daily_limit.toLocaleString()"></p>
+            <!-- Deployed bar -->
+            <div class="mt-2">
+                <div class="flex justify-between text-xs mb-0.5">
+                    <span class="text-gray-500">Deployed</span>
+                    <span class="text-gray-400" x-text="cs + bgt.deployed.toFixed(2) + ' / ' + cs + bgt.daily_limit.toFixed(0)"></span>
+                </div>
+                <div class="w-full bg-gray-700 rounded-full h-1.5">
+                    <div class="h-1.5 rounded-full bg-accent-500 transition-all" :style="'width:' + Math.min(bgt.deployed_pct, 100) + '%'"></div>
+                </div>
+            </div>
+            <!-- Loss bar -->
+            <div class="mt-1.5">
+                <div class="flex justify-between text-xs mb-0.5">
+                    <span class="text-gray-500">P&L</span>
+                    <span :class="bgt.daily_pnl >= 0 ? 'text-green-400' : 'text-red-400'"
+                          x-text="(bgt.daily_pnl >= 0 ? '+' : '') + cs + bgt.daily_pnl.toFixed(2) + ' / ' + cs + bgt.loss_limit.toFixed(2)"></span>
+                </div>
+                <div class="w-full bg-gray-700 rounded-full h-1.5">
+                    <div class="h-1.5 rounded-full transition-all"
+                         :class="bgt.loss_pct > 80 ? 'bg-red-500' : bgt.loss_pct > 50 ? 'bg-yellow-500' : 'bg-green-500'"
+                         :style="'width:' + Math.min(bgt.loss_pct, 100) + '%'"></div>
+                </div>
+            </div>
+        </div>
+        <div class="bg-dark-800 rounded-xl p-4 border border-gray-700">
+            <p class="text-gray-400 text-xs uppercase">Profit Today</p>
+            <p class="text-xl font-bold" :class="attr.total_change >= 0 ? 'text-green-400' : 'text-red-400'"
+               x-text="(attr.total_change >= 0 ? '+' : '') + cs + attr.total_change.toFixed(2)">€0</p>
+            <div class="mt-1.5 space-y-0.5 text-xs">
+                <div class="flex justify-between">
+                    <span class="text-gray-500">Realized</span>
+                    <span :class="attr.bot_realized_pnl >= 0 ? 'text-green-400' : 'text-red-400'"
+                          x-text="(attr.bot_realized_pnl >= 0 ? '+' : '') + cs + attr.bot_realized_pnl.toFixed(2)"></span>
+                </div>
+                <div class="flex justify-between">
+                    <span class="text-gray-500">Unrealized</span>
+                    <span :class="attr.bot_unrealized_pnl >= 0 ? 'text-green-400 italic' : 'text-red-400 italic'"
+                          x-text="(attr.bot_unrealized_pnl >= 0 ? '+' : '') + cs + attr.bot_unrealized_pnl.toFixed(2)"></span>
+                </div>
+            </div>
+        </div>
+        <div class="bg-dark-800 rounded-xl p-4 border border-gray-700">
+            <p class="text-gray-400 text-xs uppercase">Trades Today</p>
+            <p class="text-2xl font-bold" x-text="stats.trades_today">0</p>
+            <p class="text-sm text-gray-400" x-text="stats.holds_today + ' HOLD'"></p>
+        </div>
+        <div class="bg-dark-800 rounded-xl p-4 border border-gray-700">
+            <p class="text-gray-400 text-xs uppercase">Win Rate Today</p>
+            <p class="text-2xl font-bold" x-text="stats.win_rate + '%'">0%</p>
+        </div>
+    </div>
+
+    <!-- Charts Row -->
+    <div class="grid grid-cols-1 lg:grid-cols-5 gap-6 mb-6">
+        <div class="lg:col-span-3 bg-dark-800 rounded-xl p-4 border border-gray-700">
+            <h3 class="text-sm font-bold mb-3 text-gray-300">Daily P&L</h3>
+            <div style="position:relative; height:200px;">
+                <canvas id="pnlChart"></canvas>
+            </div>
+        </div>
+        <div class="lg:col-span-2 bg-dark-800 rounded-xl p-4 border border-gray-700">
+            <h3 class="text-sm font-bold mb-3 text-gray-300">Last Analysis</h3>
+            <div class="space-y-2 max-h-64 overflow-y-auto scrollbar-thin">
+                <template x-for="sig in latestSignals" :key="sig.symbol">
+                    <div class="bg-dark-700 rounded-lg p-2 flex items-center justify-between">
+                        <span class="font-semibold text-sm" x-text="sig.symbol"></span>
+                        <div class="flex items-center gap-2">
+                            <span class="px-2 py-0.5 rounded text-xs font-bold"
+                                :class="{
+                                    'bg-green-700': sig.action === 'BUY',
+                                    'bg-red-700': sig.action === 'SELL',
+                                    'bg-gray-600': sig.action === 'HOLD'
+                                }"
+                                x-text="sig.action"></span>
+                            <div class="w-16 bg-gray-700 rounded-full h-1.5">
+                                <div class="h-1.5 rounded-full bg-accent-500"
+                                     :style="'width:' + (sig.confidence*100) + '%'"></div>
+                            </div>
+                            <span class="text-xs text-gray-400" x-text="(sig.confidence*100).toFixed(0)+'%'"></span>
+                        </div>
+                    </div>
+                </template>
+            </div>
+        </div>
+    </div>
+
+    <!-- Fear & Greed + Recent Trades + Log -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <!-- Fear & Greed Widget -->
+        <div class="bg-dark-800 rounded-xl p-4 border border-gray-700" x-show="fearGreed !== null">
+            <h3 class="text-sm font-bold mb-3 text-gray-300">Fear & Greed Index</h3>
+            <div class="flex flex-col items-center">
+                <div class="relative w-32 h-16 overflow-hidden">
+                    <div class="absolute w-32 h-32 rounded-full border-8"
+                        :class="{
+                            'border-green-800': fearGreed <= 24,
+                            'border-green-500': fearGreed > 24 && fearGreed <= 44,
+                            'border-yellow-500': fearGreed > 44 && fearGreed <= 55,
+                            'border-orange-500': fearGreed > 55 && fearGreed <= 74,
+                            'border-red-500': fearGreed > 74
+                        }"></div>
+                </div>
+                <p class="text-3xl font-bold mt-2" x-text="fearGreed"></p>
+                <p class="text-sm text-gray-400" x-text="fearGreedLabel"></p>
+            </div>
+        </div>
+
+        <!-- Recent Trades -->
+        <div class="bg-dark-800 rounded-xl p-4 border border-gray-700">
+            <h3 class="text-sm font-bold mb-3 text-gray-300">Recent Trades</h3>
+            <div class="space-y-2">
+                <template x-for="t in recentTrades" :key="t.id">
+                    <div class="bg-dark-700 rounded p-2 flex justify-between text-sm">
+                        <div class="flex gap-2 items-center">
+                            <span class="font-bold" x-text="t.symbol"></span>
+                            <span class="px-1.5 py-0.5 rounded text-xs font-bold"
+                                :class="t.action==='BUY' ? 'bg-green-700' : t.action==='SELL' ? 'bg-red-700' : 'bg-gray-600'"
+                                x-text="t.action"></span>
+                        </div>
+                        <span class="text-gray-400 text-xs" x-text="t.timestamp.slice(11,16)"></span>
+                    </div>
+                </template>
+            </div>
+        </div>
+
+        <!-- Live Log -->
+        {% include "components/live_log.html" %}
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function dashboardData() {
+    return {
+        stats: { portfolio_value: 0, daily_pnl: 0, daily_pnl_pct: 0, trades_today: 0, holds_today: 0, win_rate: 0 },
+        attr: { total_change: 0, bot_total_pnl: 0, bot_realized_pnl: 0, bot_unrealized_pnl: 0 },
+        bgt: { daily_limit: 0, deployed: 0, deployed_pct: 0, remaining: 0, daily_pnl: 0, loss_limit: 0, loss_pct: 0, paused: false, trades_today: 0 },
+        tradingBudget: 0,
+        cs: '\u20ac',
+        latestSignals: [],
+        recentTrades: [],
+        fearGreed: null,
+        fearGreedLabel: '',
+        pnlChart: null,
+        tick: 0,
+        async init() {
+            await this.refresh();
+            setInterval(() => this.refresh(), 2000);
+        },
+        async refresh() {
+            this.tick++;
+            try {
+                // Status + trades every 2s; chart + fear&greed every 30s
+                const fast = [
+                    fetch('/api/status').then(r => r.json()),
+                    fetch('/api/trades/recent?limit=5').then(r => r.json()),
+                ];
+                const slow = this.tick % 15 === 1 ? [
+                    fetch('/api/fear-greed').then(r => r.json()).catch(() => null),
+                    fetch('/api/daily-stats?days=30').then(r => r.json()).catch(() => []),
+                ] : [];
+                const results = await Promise.all([...fast, ...slow]);
+                const [status, trades] = results;
+                const fg = results[2] || null;
+                const dailyStats = results[3] || null;
+                this.stats = status.stats || this.stats;
+                this.attr = status.attribution || this.attr;
+                this.bgt = status.budget || this.bgt;
+                this.tradingBudget = status.trading_budget || 0;
+                this.cs = status.currency_symbol || '\u20ac';
+                this.latestSignals = status.latest_signals || [];
+                this.recentTrades = trades || [];
+                if (fg && fg.value !== undefined) {
+                    this.fearGreed = fg.value;
+                    this.fearGreedLabel = fg.classification;
+                }
+                if (dailyStats) this.buildPnlChart(dailyStats);
+            } catch(e) { console.error(e); }
+        },
+        buildPnlChart(data) {
+            // data comes sorted DESC from API — reverse to chronological
+            const sorted = [...data].reverse();
+            // Ensure today is always present (even if no row saved yet)
+            const todayStr = new Date().toISOString().slice(0, 10);
+            if (!sorted.some(d => d.date === todayStr)) {
+                sorted.push({ date: todayStr, total_pnl: 0 });
+            }
+            const labels = sorted.map(d => d.date.slice(5)); // "MM-DD"
+            const values = sorted.map(d => d.total_pnl || 0);
+            const bgColors = values.map(v => v >= 0 ? 'rgba(74,222,128,0.7)' : 'rgba(248,113,113,0.7)');
+            const borderColors = values.map(v => v >= 0 ? 'rgba(74,222,128,1)' : 'rgba(248,113,113,1)');
+            if (this.pnlChart) {
+                this.pnlChart.data.labels = labels;
+                this.pnlChart.data.datasets[0].data = values;
+                this.pnlChart.data.datasets[0].backgroundColor = bgColors;
+                this.pnlChart.data.datasets[0].borderColor = borderColors;
+                this.pnlChart.update('none');
+                return;
+            }
+            const canvas = document.getElementById('pnlChart');
+            if (!canvas) return;
+            this.pnlChart = new Chart(canvas, {
+                type: 'bar',
+                data: {
+                    labels,
+                    datasets: [{
+                        label: 'P&L (' + this.cs + ')',
+                        data: values,
+                        backgroundColor: bgColors,
+                        borderColor: borderColors,
+                        borderWidth: 1,
+                        borderRadius: 3,
+                        minBarLength: 2,
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                label: (ctx) => (ctx.parsed.y >= 0 ? '+' : '') + this.cs + ctx.parsed.y.toFixed(2)
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            ticks: { color: '#6b7280' },
+                            grid: { display: false }
+                        },
+                        y: {
+                            ticks: {
+                                color: '#6b7280',
+                                callback: (v) => this.cs + v.toFixed(2)
+                            },
+                            grid: { color: 'rgba(75,85,99,0.3)' }
+                        }
+                    }
+                }
+            });
+        }
+    }
+}
+</script>
+{% endblock %}

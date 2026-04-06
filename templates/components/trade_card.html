@@ -1,0 +1,21 @@
+<div class="bg-dark-700 rounded-lg p-3 flex items-center justify-between text-sm">
+    <div class="flex items-center gap-3">
+        <span class="font-bold">{{ trade.symbol }}</span>
+        <span class="px-2 py-0.5 rounded text-xs font-bold
+            {% if trade.action == 'BUY' %}bg-green-700 text-green-100
+            {% elif trade.action == 'SELL' %}bg-red-700 text-red-100
+            {% else %}bg-gray-600 text-gray-200{% endif %}">
+            {{ trade.action }}
+        </span>
+        <span class="text-gray-400">{{ trade.timestamp }}</span>
+    </div>
+    <div class="flex items-center gap-4">
+        <span class="text-gray-300">€{{ "%.2f"|format(trade.price or 0) }}</span>
+        {% if trade.pnl_usd is not none %}
+        <span class="{% if trade.pnl_usd >= 0 %}text-green-400{% else %}text-red-400{% endif %}">
+            €{{ "%.2f"|format(trade.pnl_usd) }}
+        </span>
+        {% endif %}
+        <span class="text-gray-500">{{ "%.0f"|format((trade.confidence or 0) * 100) }}%</span>
+    </div>
+</div>

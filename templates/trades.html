@@ -1,0 +1,281 @@
+{% extends "base.html" %}
+{% block title %}Trade History — Trading Bot{% endblock %}
+{% block page_title %}Trade History{% endblock %}
+{% block breadcrumb %}Home / Trades{% endblock %}
+{% block nav_trades %}bg-dark-700 text-accent-500{% endblock %}
+
+{% block content %}
+<div x-data="tradesData()" x-init="init()">
+    <!-- Quick Filters -->
+    <div class="flex gap-2 mb-3">
+        <button @click="applyQuickFilter('all')"
+            class="px-3 py-1 rounded text-xs font-bold border"
+            :class="quickFilter === 'all' ? 'bg-accent-600 border-accent-500' : 'bg-dark-700 border-gray-600 hover:bg-dark-600'"
+            >All</button>
+        <button @click="applyQuickFilter('live_buy')"
+            class="px-3 py-1 rounded text-xs font-bold border"
+            :class="quickFilter === 'live_buy' ? 'bg-blue-700 border-blue-500' : 'bg-dark-700 border-gray-600 hover:bg-dark-600'"
+            >Live BUY (Open)</button>
+        <button @click="applyQuickFilter('paper_buy')"
+            class="px-3 py-1 rounded text-xs font-bold border"
+            :class="quickFilter === 'paper_buy' ? 'bg-yellow-700 border-yellow-500' : 'bg-dark-700 border-gray-600 hover:bg-dark-600'"
+            >Paper BUY (Open)</button>
+        <button @click="applyQuickFilter('closed')"
+            class="px-3 py-1 rounded text-xs font-bold border"
+            :class="quickFilter === 'closed' ? 'bg-gray-600 border-gray-500' : 'bg-dark-700 border-gray-600 hover:bg-dark-600'"
+            >Closed</button>
+    </div>
+
+    <!-- Filters -->
+    <div class="bg-dark-800 rounded-xl p-4 border border-gray-700 mb-6 flex flex-wrap gap-4 items-end">
+        <div>
+            <label class="text-xs text-gray-400 block mb-1">From</label>
+            <input type="date" x-model="filters.from" class="bg-dark-700 border border-gray-600 rounded px-3 py-1.5 text-sm">
+        </div>
+        <div>
+            <label class="text-xs text-gray-400 block mb-1">To</label>
+            <input type="date" x-model="filters.to" class="bg-dark-700 border border-gray-600 rounded px-3 py-1.5 text-sm">
+        </div>
+        <div>
+            <label class="text-xs text-gray-400 block mb-1">Broker</label>
+            <select x-model="filters.broker" class="bg-dark-700 border border-gray-600 rounded px-3 py-1.5 text-sm">
+                <option value="">All</option>
+                <option value="ibkr">IBKR</option>
+                <option value="coinbase">Coinbase</option>
+            </select>
+        </div>
+        <div>
+            <label class="text-xs text-gray-400 block mb-1">Action</label>
+            <select x-model="filters.action" class="bg-dark-700 border border-gray-600 rounded px-3 py-1.5 text-sm">
+                <option value="">All</option>
+                <option value="BUY">BUY</option>
+                <option value="SELL">SELL</option>
+                <option value="HOLD">HOLD</option>
+            </select>
+        </div>
+        <div>
+            <label class="text-xs text-gray-400 block mb-1">Mode</label>
+            <select x-model="filters.paper_mode" class="bg-dark-700 border border-gray-600 rounded px-3 py-1.5 text-sm">
+                <option value="">All</option>
+                <option value="1">Paper</option>
+                <option value="0">Live</option>
+            </select>
+        </div>
+        <div>
+            <label class="text-xs text-gray-400 block mb-1">Symbol</label>
+            <input type="text" x-model="filters.symbol" placeholder="e.g. AAPL"
+                class="bg-dark-700 border border-gray-600 rounded px-3 py-1.5 text-sm w-24">
+        </div>
+        <button @click="fetchTrades()" class="px-4 py-1.5 bg-accent-600 hover:bg-accent-500 rounded text-sm font-bold">Filter</button>
+        <a :href="'/api/trades/export?' + buildQuery()" class="px-4 py-1.5 bg-dark-700 hover:bg-dark-800 border border-gray-600 rounded text-sm ml-auto">Export CSV</a>
+    </div>
+
+    <!-- Table -->
+    <div class="bg-dark-800 rounded-xl border border-gray-700 overflow-hidden">
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead class="text-gray-400 text-xs uppercase bg-dark-700">
+                    <tr>
+                        <th class="py-3 px-3 text-left">#</th>
+                        <th class="py-3 px-3 text-left">Time</th>
+                        <th class="py-3 px-3 text-left">Symbol</th>
+                        <th class="py-3 px-3 text-left">Broker</th>
+                        <th class="py-3 px-3 text-center">Mode</th>
+                        <th class="py-3 px-3 text-center">Action</th>
+                        <th class="py-3 px-3 text-right">Confidence</th>
+                        <th class="py-3 px-3 text-left">Strategy</th>
+                        <th class="py-3 px-3 text-right">Price</th>
+                        <th class="py-3 px-3 text-right">Qty</th>
+                        <th class="py-3 px-3 text-right" title="Realized P&L for closed trades, unrealized (italic) for open">P&L</th>
+                        <th class="py-3 px-3 text-center w-20"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <template x-for="t in trades" :key="t.id">
+                        <tr class="border-b border-gray-800 hover:bg-dark-700 cursor-pointer" @click="expanded === t.id ? expanded = null : expanded = t.id">
+                            <td class="py-2 px-3">
+                                <a :href="'/trades/' + t.id" class="text-accent-500 hover:underline font-mono"
+                                   @click.stop x-text="'#' + t.id"></a>
+                            </td>
+                            <td class="py-2 px-3 text-gray-400 whitespace-nowrap" x-text="t.timestamp"></td>
+                            <td class="py-2 px-3 font-bold" x-text="t.symbol"></td>
+                            <td class="py-2 px-3" x-text="t.broker"></td>
+                            <td class="py-2 px-3 text-center">
+                                <span class="px-2 py-0.5 rounded text-xs font-bold"
+                                    :class="t.paper_mode ? 'bg-yellow-700 text-yellow-200' : 'bg-blue-700 text-blue-200'"
+                                    x-text="t.paper_mode ? 'PAPER' : 'LIVE'"></span>
+                            </td>
+                            <td class="py-2 px-3 text-center">
+                                <span class="px-2 py-0.5 rounded text-xs font-bold"
+                                    :class="{'bg-green-700':t.action==='BUY','bg-red-700':t.action==='SELL','bg-gray-600':t.action==='HOLD'}"
+                                    x-text="t.action"></span>
+                            </td>
+                            <td class="py-2 px-3 text-right" x-text="((t.confidence||0)*100).toFixed(0)+'%'"></td>
+                            <td class="py-2 px-3 text-gray-400" x-text="t.dominant_strategy || '-'"></td>
+                            <td class="py-2 px-3 text-right" x-text="cs+(t.price||0).toFixed(2)"></td>
+                            <td class="py-2 px-3 text-right" x-text="(t.quantity||0).toFixed(4)"></td>
+                            <td class="py-2 px-3 text-right"
+                                x-text="t.pnl_usd !== null
+                                    ? ((t.pnl_usd>=0?'+':'')+cs+t.pnl_usd.toFixed(2))
+                                    : (t.unrealized_pnl !== undefined
+                                        ? ((t.unrealized_pnl>=0?'+':'')+cs+t.unrealized_pnl.toFixed(2))
+                                        : '-')"
+                                :class="t.pnl_usd !== null
+                                    ? (t.pnl_usd>=0 ? 'text-green-400' : 'text-red-400')
+                                    : (t.unrealized_pnl !== undefined
+                                        ? (t.unrealized_pnl>=0 ? 'text-green-400 italic opacity-70' : 'text-red-400 italic opacity-70')
+                                        : 'text-gray-500')"
+                                :title="t.unrealized_pnl !== undefined ? ('Unrealized @ '+cs+(t.current_price||0)) : ''">
+                            </td>
+                            <td class="py-2 px-3 text-center">
+                                <button x-show="t.action==='BUY' && !t.closed_at"
+                                    @click.stop="forceClose(t)"
+                                    class="px-2 py-1 bg-red-700 hover:bg-red-600 rounded text-xs font-bold whitespace-nowrap"
+                                    :disabled="closing === t.id"
+                                    x-text="closing === t.id ? 'Closing...' : 'Close'">
+                                </button>
+                                <span x-show="t.closed_at" class="text-xs text-gray-500">CLOSED</span>
+                            </td>
+                        </tr>
+                        <!-- Expanded detail -->
+                        <tr x-show="expanded === t.id" x-transition>
+                            <td colspan="12" class="bg-dark-700 p-4">
+                                <div class="grid grid-cols-2 gap-4 text-sm">
+                                    <div>
+                                        <p class="text-gray-400 mb-1 font-bold">Reasoning</p>
+                                        <p x-text="t.reasoning || 'N/A'"></p>
+                                    </div>
+                                    <div>
+                                        <p class="text-gray-400 mb-1 font-bold">Warnings</p>
+                                        <p x-text="t.warnings || 'None'"></p>
+                                    </div>
+                                    <div>
+                                        <p class="text-gray-400 mb-1 font-bold">Session</p>
+                                        <p x-text="t.session || 'N/A'"></p>
+                                    </div>
+                                    <div>
+                                        <p class="text-gray-400 mb-1 font-bold">Fear & Greed</p>
+                                        <p x-text="t.fear_greed_value !== null ? t.fear_greed_value : 'N/A'"></p>
+                                    </div>
+                                </div>
+                            </td>
+                        </tr>
+                    </template>
+                </tbody>
+            </table>
+        </div>
+        <!-- Pagination -->
+        <div class="flex justify-between items-center p-4 text-sm text-gray-400">
+            <span x-text="'Showing ' + trades.length + ' trades'"></span>
+            <div class="flex gap-2">
+                <button @click="page = Math.max(1, page-1); fetchTrades()"
+                    :disabled="page <= 1" class="px-3 py-1 bg-dark-700 rounded disabled:opacity-30">Prev</button>
+                <span x-text="'Page ' + page"></span>
+                <button @click="page++; fetchTrades()"
+                    :disabled="trades.length < 20" class="px-3 py-1 bg-dark-700 rounded disabled:opacity-30">Next</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function tradesData() {
+    return {
+        trades: [], page: 1, expanded: null, closing: null, cs: '\u20ac',
+        prices: {},
+        quickFilter: 'all',
+        filters: { from: '', to: '', broker: '', action: '', symbol: '', paper_mode: '', open_only: '' },
+        applyQuickFilter(preset) {
+            this.quickFilter = preset;
+            this.filters = { from: '', to: '', broker: '', action: '', symbol: '', paper_mode: '', open_only: '' };
+            this.page = 1;
+            if (preset === 'live_buy') {
+                this.filters.action = 'BUY';
+                this.filters.paper_mode = '0';
+                this.filters.open_only = '1';
+            } else if (preset === 'paper_buy') {
+                this.filters.action = 'BUY';
+                this.filters.paper_mode = '1';
+                this.filters.open_only = '1';
+            } else if (preset === 'closed') {
+                this.filters.action = 'BUY';
+                this.filters.open_only = '0';
+            }
+            this.fetchTrades();
+        },
+        buildQuery() {
+            const p = new URLSearchParams();
+            Object.entries(this.filters).forEach(([k,v]) => { if(v) p.set(k,v); });
+            p.set('page', this.page);
+            return p.toString();
+        },
+        async init() {
+            await this.fetchTrades();
+            setInterval(() => this.refreshPrices(), 1000);
+        },
+        async fetchTrades() {
+            try {
+                const [r, s] = await Promise.all([
+                    fetch('/api/trades?' + this.buildQuery()),
+                    fetch('/api/status'),
+                ]);
+                this.trades = await r.json();
+                const status = await s.json();
+                this.cs = status.currency_symbol || '\u20ac';
+                this.extractPrices(status);
+            } catch(e) {}
+        },
+        extractPrices(status) {
+            const holdings = (status.coinbase_portfolio || {}).holdings || [];
+            for (const h of holdings) {
+                if (h.currency && h.price) this.prices[h.currency] = h.price;
+            }
+        },
+        async refreshPrices() {
+            try {
+                const r = await fetch('/api/status');
+                const status = await r.json();
+                this.extractPrices(status);
+                const fiat = new Set(['EUR','USD','GBP','USDC','USDT','DAI']);
+                for (const t of this.trades) {
+                    if (t.action === 'BUY' && !t.closed_at && t.price && t.quantity) {
+                        const parts = t.symbol.split('-');
+                        const base = parts[0];
+                        const quote = parts[1] || 'EUR';
+                        let cp;
+                        if (!fiat.has(quote) && this.prices[quote] > 0) {
+                            cp = this.prices[base] / this.prices[quote];
+                        } else {
+                            cp = this.prices[base];
+                        }
+                        if (cp) {
+                            t.unrealized_pnl = Math.round((cp - t.price) * t.quantity * 100) / 100;
+                            t.unrealized_pnl_pct = Math.round((cp - t.price) / t.price * 10000) / 100;
+                            t.current_price = cp;
+                        }
+                    }
+                }
+            } catch(e) {}
+        },
+        async forceClose(trade) {
+            const mode = trade.paper_mode ? 'PAPER' : 'LIVE';
+            if (!confirm(`Force close ${mode} position #${trade.id} (${trade.symbol})?\n\nThis will sell at current market price.`)) return;
+            this.closing = trade.id;
+            try {
+                const r = await fetch(`/api/trades/${trade.id}/close`, { method: 'POST' });
+                const d = await r.json();
+                if (r.ok) {
+                    alert(`Closed #${trade.id} ${trade.symbol}\nPrice: ${this.cs}${d.close_price}\nP&L: ${d.pnl_usd >= 0 ? '+' : ''}${this.cs}${d.pnl_usd.toFixed(2)} (${d.pnl_pct >= 0 ? '+' : ''}${d.pnl_pct.toFixed(1)}%)`);
+                    await this.fetchTrades();
+                } else {
+                    alert('Error: ' + (d.error || 'Unknown error'));
+                }
+            } catch(e) { alert('Request failed: ' + e.message); }
+            this.closing = null;
+        }
+    }
+}
+</script>
+{% endblock %}
